@@ -15,6 +15,8 @@ pnpm build
 
 Textured local development additionally requires a legally obtained Vintage
 Story asset tree. Follow [docs/asset-pipeline.md](docs/asset-pipeline.md).
+Platform-specific setup and asset-location instructions are in
+[docs/windows-and-ubuntu.md](docs/windows-and-ubuntu.md).
 
 ## Pull requests
 

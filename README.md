@@ -53,6 +53,11 @@ Requirements:
 - pnpm 11
 - a legally obtained Vintage Story asset directory for textured rendering
 
+Windows 10/11 and Ubuntu are tested platforms. See
+[Windows and Ubuntu](docs/windows-and-ubuntu.md) for platform-specific tool
+installation, game-asset locations, local linking, production compilation, and
+an Ubuntu/Nginx deployment example.
+
 ```bash
 pnpm install
 ```
@@ -132,6 +137,7 @@ _local/                       Ignored local game/mod/source inputs
 
 ## Documentation
 
+- [Windows and Ubuntu setup and deployment](docs/windows-and-ubuntu.md)
 - [Asset pipeline](docs/asset-pipeline.md)
 - [Website integration](docs/website-integration.md)
 - [Embedding and release architecture](docs/embedding-and-releases.md)
