@@ -1,0 +1,20 @@
+{
+  "name": "@vs-schematic/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b && vite build",
+    "dev": "vite",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@vs-schematic/renderer-core": "workspace:*",
+    "gifenc": "1.0.3",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.4",
+    "vite": "^8.2.1"
+  }
+}

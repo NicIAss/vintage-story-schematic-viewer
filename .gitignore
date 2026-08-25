@@ -1,0 +1,18 @@
+# Local Vintage Story installation data and proprietary/readable source checkouts.
+# This directory is intentionally never committed.
+/_local/
+
+# Local renderer caches and generated diagnostics.
+/.vsviewer/
+
+# JavaScript/TypeScript build output.
+/node_modules/
+**/node_modules/
+**/dist/
+**/coverage/
+*.log
+
+# Local environment overrides.
+.env
+.env.*
+!.env.example

@@ -1,0 +1,29 @@
+{
+  "name": "vintage-story-schematic-renderer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unofficial web renderer and GIF preview generator for Vintage Story schematics",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NicIAss/vintage-story-schematic-viewer.git"
+  },
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "assets:compile": "pnpm --filter @vs-schematic/asset-compiler compile",
+    "build": "pnpm -r --if-present build",
+    "predev": "pnpm assets:compile",
+    "dev": "pnpm --filter @vs-schematic/desktop dev",
+    "test": "pnpm -r --if-present test",
+    "typecheck": "pnpm -r --if-present typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
