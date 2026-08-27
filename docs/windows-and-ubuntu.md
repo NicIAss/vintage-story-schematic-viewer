@@ -192,7 +192,8 @@ pnpm assets:compile -- \
 The website also needs the referenced PNGs under the same
 `game/textures`, `survival/textures`, and `creative/textures` hierarchy. See
 [Asset pipeline](asset-pipeline.md) for the complete production layout and
-release update process.
+release asset process. For an existing website, follow
+[Upgrading and rollback](upgrading.md) before replacing the live version.
 
 ## Ubuntu static hosting example
 

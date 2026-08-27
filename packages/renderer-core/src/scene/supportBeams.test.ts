@@ -1,3 +1,4 @@
+import { Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import { createSupportBeamSegments, decodeSupportBeamArray } from "./supportBeams";
 
@@ -35,5 +36,23 @@ describe("support beam schematic data", () => {
     }, false);
     expect(segments.length).toBeGreaterThan(1);
     expect(segments.every((segment) => segment.shapeIndex === 0)).toBe(true);
+  });
+
+  it("does not shift a short partial beam beyond its stored endpoints", () => {
+    const segments = createSupportBeamSegments({
+      start: [0.5, 0.5, 0],
+      end: [0.5, 0.5, 1],
+    });
+    expect(segments).toHaveLength(1);
+
+    // Centered X coordinates -0.5 and 0.5 are the two ends of the compiled
+    // full-length model. They must map onto the stored Z range 0 through 1.
+    const matrix = segments[0]?.matrix;
+    expect(matrix).toBeDefined();
+    const mappedZ = [-0.5, 0.5]
+      .map((x) => new Vector3(x, -0.375, 0).applyMatrix4(matrix!).z)
+      .sort((left, right) => left - right);
+    expect(mappedZ[0]).toBeCloseTo(0);
+    expect(mappedZ[1]).toBeCloseTo(1);
   });
 });

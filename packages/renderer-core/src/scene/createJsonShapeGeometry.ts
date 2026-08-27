@@ -18,6 +18,7 @@ export interface JsonShapeGeometry {
   readonly geometry: BufferGeometry;
   readonly materialAliases: readonly string[];
   readonly materialColorMaps: readonly ShapeMaterialColorMaps[];
+  readonly materialTransparencies: readonly boolean[];
 }
 
 export interface ShapeMaterialColorMaps {
@@ -28,6 +29,7 @@ export interface ShapeMaterialColorMaps {
 interface FaceBucket {
   readonly textureAlias: string;
   readonly colorMaps: ShapeMaterialColorMaps;
+  readonly transparent: boolean;
   readonly positions: number[];
   readonly normals: number[];
   readonly uvs: number[];
@@ -48,14 +50,29 @@ export function createJsonShapeGeometry(
   reference: CompiledShapeReference,
   modelTransform: CompiledModelTransform | null = null,
   elementLimit: number | null = null,
+  selectedElementNames: readonly string[] | null = null,
 ): JsonShapeGeometry | null {
   const buckets = new Map<string, FaceBucket>();
   const compositeMatrix = createCompositeMatrix(reference, modelTransform);
   const elements = elementLimit === null
     ? shape.elements
     : shape.elements.slice(0, Math.max(0, Math.floor(elementLimit)));
+  const selectedNames = selectedElementNames === null
+    ? null
+    : new Set(selectedElementNames.map((name) => name.toLowerCase()));
   for (const element of elements) {
-    appendElement(element, new Matrix4(), compositeMatrix, shape, buckets, null, null);
+    appendElement(
+      element,
+      new Matrix4(),
+      compositeMatrix,
+      shape,
+      buckets,
+      null,
+      null,
+      null,
+      selectedNames,
+      false,
+    );
   }
   if (buckets.size === 0) {
     return null;
@@ -69,6 +86,7 @@ export function createJsonShapeGeometry(
   const materialBuckets = [...buckets.values()];
   const materialAliases = materialBuckets.map((bucket) => bucket.textureAlias);
   const materialColorMaps = materialBuckets.map((bucket) => bucket.colorMaps);
+  const materialTransparencies = materialBuckets.map((bucket) => bucket.transparent);
   for (let materialIndex = 0; materialIndex < materialBuckets.length; materialIndex += 1) {
     const bucket = materialBuckets[materialIndex];
     if (bucket === undefined) {
@@ -88,7 +106,7 @@ export function createJsonShapeGeometry(
   geometry.setIndex(indices);
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  return { geometry, materialAliases, materialColorMaps };
+  return { geometry, materialAliases, materialColorMaps, materialTransparencies };
 }
 
 function appendElement(
@@ -99,6 +117,9 @@ function appendElement(
   buckets: Map<string, FaceBucket>,
   inheritedClimateColorMap: string | null,
   inheritedSeasonColorMap: string | null,
+  inheritedRenderPass: number | null,
+  selectedNames: ReadonlySet<string> | null,
+  selectedAncestor: boolean,
 ): void {
   const elementMatrix = parentMatrix.clone().multiply(createElementMatrix(element));
   const finalMatrix = compositeMatrix.clone().multiply(elementMatrix);
@@ -110,29 +131,44 @@ function appendElement(
   );
   const climateColorMap = element.climateColorMap ?? inheritedClimateColorMap;
   const seasonColorMap = element.seasonColorMap ?? inheritedSeasonColorMap;
-  for (const [faceName, face] of Object.entries(element.faces)) {
-    const cubeFace = faceName as CubeFace;
-    if (face === undefined || !face.enabled) {
-      continue;
+  const renderPass = element.renderPass ?? inheritedRenderPass;
+  const transparent = renderPass === 2 || renderPass === 3 || renderPass === 4;
+  const selected = selectedNames === null
+    || selectedAncestor
+    || (element.name !== null && selectedNames.has(element.name.toLowerCase()));
+  if (selected) {
+    for (const [faceName, face] of Object.entries(element.faces)) {
+      const cubeFace = faceName as CubeFace;
+      if (face === undefined || !face.enabled) {
+        continue;
+      }
+      const bucket = getBucket(
+        buckets,
+        face.texture,
+        climateColorMap,
+        seasonColorMap,
+        transparent,
+      );
+      const vertexOffset = bucket.positions.length / 3;
+      const vertices = faceVertices(cubeFace, size);
+      const normal = new Vector3(...FACE_NORMALS[cubeFace]).applyNormalMatrix(normalMatrix).normalize();
+      for (const vertex of vertices) {
+        vertex.applyMatrix4(finalMatrix);
+        bucket.positions.push(vertex.x, vertex.y, vertex.z);
+        bucket.normals.push(normal.x, normal.y, normal.z);
+      }
+      const textureSize = shape.textureSizes?.[face.texture.toLowerCase()]
+        ?? [shape.textureWidth, shape.textureHeight];
+      bucket.uvs.push(...faceUvs(face.uv, face.rotation, textureSize[0], textureSize[1]));
+      bucket.indices.push(
+        vertexOffset,
+        vertexOffset + 1,
+        vertexOffset + 2,
+        vertexOffset,
+        vertexOffset + 2,
+        vertexOffset + 3,
+      );
     }
-    const bucket = getBucket(buckets, face.texture, climateColorMap, seasonColorMap);
-    const vertexOffset = bucket.positions.length / 3;
-    const vertices = faceVertices(cubeFace, size);
-    const normal = new Vector3(...FACE_NORMALS[cubeFace]).applyNormalMatrix(normalMatrix).normalize();
-    for (const vertex of vertices) {
-      vertex.applyMatrix4(finalMatrix);
-      bucket.positions.push(vertex.x, vertex.y, vertex.z);
-      bucket.normals.push(normal.x, normal.y, normal.z);
-    }
-    bucket.uvs.push(...faceUvs(face.uv, face.rotation, shape.textureWidth, shape.textureHeight));
-    bucket.indices.push(
-      vertexOffset,
-      vertexOffset + 1,
-      vertexOffset + 2,
-      vertexOffset,
-      vertexOffset + 2,
-      vertexOffset + 3,
-    );
   }
   for (const child of element.children) {
     appendElement(
@@ -143,6 +179,9 @@ function appendElement(
       buckets,
       climateColorMap,
       seasonColorMap,
+      renderPass,
+      selectedNames,
+      selected,
     );
   }
 }
@@ -242,8 +281,9 @@ function getBucket(
   alias: string,
   climateColorMap: string | null,
   seasonColorMap: string | null,
+  transparent: boolean,
 ): FaceBucket {
-  const key = `${alias}\u001f${climateColorMap ?? ""}\u001f${seasonColorMap ?? ""}`;
+  const key = `${alias}\u001f${climateColorMap ?? ""}\u001f${seasonColorMap ?? ""}\u001f${transparent ? "transparent" : "opaque"}`;
   const existing = buckets.get(key);
   if (existing !== undefined) {
     return existing;
@@ -251,6 +291,7 @@ function getBucket(
   const bucket: FaceBucket = {
     textureAlias: alias,
     colorMaps: { climate: climateColorMap, season: seasonColorMap },
+    transparent,
     positions: [],
     normals: [],
     uvs: [],

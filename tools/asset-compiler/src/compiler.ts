@@ -7,6 +7,8 @@ import type {
   CompiledColorMapReference,
   CompiledDecorProperties,
   CompiledEntityShapeSet,
+  CompiledFruitTreeResources,
+  CompiledFruitTreeType,
   CompiledGroundStorageProperties,
   CompiledItemDefinition,
   CompiledModelTransform,
@@ -111,6 +113,14 @@ export async function compileAssetRegistry(
   const blocks: Record<string, CompiledBlockDefinition> = {};
   const items: Record<string, CompiledItemDefinition> = {};
   const shapes: Record<string, CompiledShape> = {};
+  const fruitTrees = resolveFruitTreeResources(
+    blockDocuments,
+    shapeDocuments,
+    shapes,
+    textureAssets,
+    textureCache,
+    diagnostics,
+  );
   let unresolvedTextureCodeCount = 0;
   let texturedCubeCodeCount = 0;
 
@@ -414,6 +424,7 @@ export async function compileAssetRegistry(
     items,
     colorMaps: compiledColorMaps,
     shapes,
+    fruitTrees,
   };
   rewriteTextureUrls(registry, options.textureBaseUrl ?? "/@vs-assets");
   return registry;
@@ -802,6 +813,120 @@ function resolveShapeReference(
     scale: asNumber(getCaseInsensitive(compositeShape, "scale")) ?? 1,
     textures,
   };
+}
+
+function resolveFruitTreeResources(
+  blockDocuments: ReadonlyMap<string, AssetDocument>,
+  shapeDocuments: ReadonlyMap<string, AssetDocument>,
+  compiledShapes: Record<string, CompiledShape>,
+  textureAssets: ReadonlyMap<string, TextureAsset>,
+  textureCache: Map<string, RegistryTexture>,
+  warnings: string[],
+): CompiledFruitTreeResources | null {
+  const documents = [...blockDocuments.values()];
+  const branchDocument = documents.find((document) => {
+    const className = asString(getCaseInsensitive(document.data, "class"));
+    return className === "BlockDynamicTreeBranch" || className === "BlockFruitTreeBranch";
+  });
+  const foliageDocument = documents.find((document) => {
+    const className = asString(getCaseInsensitive(document.data, "class"));
+    return className === "BlockDynamicTreeFoliage" || className === "BlockFruitTreeFoliage";
+  });
+  if (branchDocument === undefined || foliageDocument === undefined) {
+    return null;
+  }
+
+  const branchAttributes = asRecord(getCaseInsensitive(branchDocument.data, "attributes"));
+  const rawShapes = asRecord(getCaseInsensitive(branchAttributes, "shapes"));
+  const shapes: Record<string, CompiledShapeReference> = {};
+  const shapeTextureSource = {
+    ...branchDocument.data,
+    // Dynamic fruit-tree textures come from the block entity's tree type.
+    // Do not let the branch block's sole dead-tree fallback replace every
+    // alias while compiling the reusable geometry.
+    textures: {},
+  };
+  for (const [shapeName, rawCompositeShape] of Object.entries(rawShapes)) {
+    const compositeShape = asRecord(rawCompositeShape);
+    const shapeBase = asString(getCaseInsensitive(compositeShape, "base"));
+    const reference = resolveShapeReference(
+      shapeTextureSource,
+      compositeShape,
+      shapeBase,
+      shapeDocuments,
+      compiledShapes,
+      textureAssets,
+      textureCache,
+      warnings,
+    );
+    if (reference !== null) {
+      shapes[shapeName.toLowerCase()] = reference;
+    }
+  }
+
+  const foliageAttributes = asRecord(getCaseInsensitive(foliageDocument.data, "attributes"));
+  const foliageProperties = asRecord(getCaseInsensitive(foliageAttributes, "foliageProperties"));
+  const baseProperties = asRecord(getCaseInsensitive(foliageProperties, "base"));
+  const baseTextures = asRecord(getCaseInsensitive(baseProperties, "textures"));
+  const fruitTreeProperties = asRecord(getCaseInsensitive(branchAttributes, "fruittreeProperties"));
+  const types: Record<string, CompiledFruitTreeType> = {};
+
+  for (const [typeName, rawTypeProperties] of Object.entries(foliageProperties)) {
+    if (typeName.toLowerCase() === "base") continue;
+    const typeProperties = asRecord(rawTypeProperties);
+    const texturesBasePath = asString(getCaseInsensitive(typeProperties, "texturesBasePath"));
+    if (texturesBasePath === null) continue;
+    const mergedTextures = {
+      ...baseTextures,
+      ...asRecord(getCaseInsensitive(typeProperties, "textures")),
+    };
+    const textures: Record<string, RegistryFaceTexture> = {};
+    for (const [textureCode, rawTexture] of Object.entries(mergedTextures)) {
+      const composite = asRecord(rawTexture);
+      const relativeBase = typeof rawTexture === "string"
+        ? rawTexture
+        : asString(getCaseInsensitive(composite, "base"));
+      if (relativeBase === null) continue;
+      const prefixedTexture = {
+        ...composite,
+        base: `${texturesBasePath}${relativeBase}`,
+      };
+      const texture = resolveFaceTexture(
+        prefixedTexture,
+        textureAssets,
+        textureCache,
+        warnings,
+      );
+      if (texture !== null) textures[textureCode.toLowerCase()] = texture;
+    }
+    const growthProperties = asRecord(getCaseInsensitive(fruitTreeProperties, typeName));
+    types[typeName.toLowerCase()] = {
+      textures,
+      climateColorMap:
+        asString(getCaseInsensitive(typeProperties, "climateColorMap"))
+        ?? asString(getCaseInsensitive(baseProperties, "climateColorMap"))
+        ?? "climatePlantTint",
+      seasonColorMap:
+        asString(getCaseInsensitive(typeProperties, "seasonColorMap"))
+        ?? asString(getCaseInsensitive(baseProperties, "seasonColorMap"))
+        ?? "seasonalFoliage",
+      evergreen: asString(getCaseInsensitive(growthProperties, "cycleType"))
+        ?.toLowerCase() === "evergreen",
+      ripeFruitShapeName: asString(getCaseInsensitive(typeProperties, "ripeFruitShapeName")),
+    };
+  }
+
+  const branchTextures = asRecord(getCaseInsensitive(branchDocument.data, "textures"));
+  const deadTreeTexture = resolveFaceTexture(
+    getCaseInsensitive(branchTextures, "deadtree"),
+    textureAssets,
+    textureCache,
+    warnings,
+  );
+  if (Object.keys(shapes).length === 0 || Object.keys(types).length === 0) {
+    return null;
+  }
+  return { shapes, types, deadTreeTexture };
 }
 
 function resolveSupportBeamShapes(
@@ -1287,6 +1412,17 @@ function compileShapeDocument(
 ): CompiledShape | null {
   const textureWidth = asNumber(getCaseInsensitive(document.data, "textureWidth")) ?? 16;
   const textureHeight = asNumber(getCaseInsensitive(document.data, "textureHeight")) ?? 16;
+  const textureSizes: Record<string, readonly [number, number]> = {};
+  for (const [textureCode, rawSize] of Object.entries(
+    asRecord(getCaseInsensitive(document.data, "textureSizes")),
+  )) {
+    const size = asArray(rawSize);
+    const width = asNumber(size[0]);
+    const height = asNumber(size[1]);
+    if (width !== null && width > 0 && height !== null && height > 0) {
+      textureSizes[textureCode.toLowerCase()] = [width, height];
+    }
+  }
   const elements = asArray(getCaseInsensitive(document.data, "elements"))
     .map((element) => compileShapeElement(asRecord(element), textureWidth, textureHeight));
   if (elements.length === 0) {
@@ -1298,6 +1434,7 @@ function compileShapeDocument(
     sourceFile: toPosix(path.join(document.pack, "shapes", document.relativePath)),
     textureWidth,
     textureHeight,
+    textureSizes,
     elements,
   };
 }
@@ -1336,6 +1473,8 @@ function compileShapeElement(
     };
   }
   return {
+    name: asString(getCaseInsensitive(element, "name")),
+    renderPass: asNumber(getCaseInsensitive(element, "renderPass")),
     from: asVector3(getCaseInsensitive(element, "from"), [0, 0, 0]),
     to: asVector3(getCaseInsensitive(element, "to"), [16, 16, 16]),
     rotationOrigin: asVector3(getCaseInsensitive(element, "rotationOrigin"), [0, 0, 0]),

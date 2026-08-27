@@ -150,6 +150,104 @@ describe("createJsonShapeGeometry", () => {
     built?.geometry.dispose();
   });
 
+  it("keeps transparent shape elements separate from an opaque frame", () => {
+    const baseElement: CompiledShape["elements"][number] = {
+      name: "Frame",
+      from: [0, 0, 0],
+      to: [16, 16, 1],
+      rotationOrigin: [0, 0, 0],
+      rotationX: 0,
+      rotationY: 0,
+      rotationZ: 0,
+      scaleX: 1,
+      scaleY: 1,
+      scaleZ: 1,
+      climateColorMap: null,
+      seasonColorMap: null,
+      faces,
+      children: [],
+    };
+    const shape: CompiledShape = {
+      key: "test:shapes/block/window-frame",
+      sourceFile: "test/shapes/block/window-frame.json",
+      textureWidth: 16,
+      textureHeight: 16,
+      elements: [
+        baseElement,
+        { ...baseElement, name: "Glass", renderPass: 3 },
+      ],
+    };
+    const built = createJsonShapeGeometry(shape, {
+      key: shape.key,
+      rotateX: 0,
+      rotateY: 0,
+      rotateZ: 0,
+      offsetX: 0,
+      offsetY: 0,
+      offsetZ: 0,
+      scale: 1,
+      textures: {},
+    });
+
+    expect(built?.materialAliases).toEqual(["all", "all"]);
+    expect(built?.materialTransparencies).toEqual([false, true]);
+    expect(built?.geometry.groups).toHaveLength(2);
+    built?.geometry.dispose();
+  });
+
+  it("normalizes UVs with per-texture dimensions for tall door sheets", () => {
+    const tallFace = {
+      north: {
+        texture: "old",
+        uv: [0, 0, 16, 32] as const,
+        rotation: 0,
+        enabled: true,
+      },
+    };
+    const shape: CompiledShape = {
+      key: "test:shapes/block/tall-door",
+      sourceFile: "test/shapes/block/tall-door.json",
+      textureWidth: 16,
+      textureHeight: 16,
+      textureSizes: { old: [16, 32] },
+      elements: [{
+        name: "door",
+        from: [0, 0, 0],
+        to: [16, 32, 2],
+        rotationOrigin: [0, 0, 0],
+        rotationX: 0,
+        rotationY: 0,
+        rotationZ: 0,
+        scaleX: 1,
+        scaleY: 1,
+        scaleZ: 1,
+        climateColorMap: null,
+        seasonColorMap: null,
+        faces: tallFace,
+        children: [],
+      }],
+    };
+    const built = createJsonShapeGeometry(shape, {
+      key: shape.key,
+      rotateX: 0,
+      rotateY: 0,
+      rotateZ: 0,
+      offsetX: 0,
+      offsetY: 0,
+      offsetZ: 0,
+      scale: 1,
+      textures: {},
+    });
+
+    expect(Array.from(built?.geometry.getAttribute("uv").array ?? [])).toEqual([
+      0, 0,
+      0, 1,
+      1, 1,
+      1, 0,
+    ]);
+    built?.geometry.dispose();
+  });
+
   it("limits stacking shapes to the requested leading elements", () => {
     const element: CompiledShape["elements"][number] = {
       from: [0, 0, 0], to: [16, 1, 16], rotationOrigin: [0, 0, 0],

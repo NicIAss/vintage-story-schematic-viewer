@@ -1,9 +1,10 @@
-export const VIEWER_VERSION = "0.1.0";
+export const VIEWER_VERSION = "0.2.0";
 
 export interface ViewerOptions {
   readonly grid: boolean;
   readonly bounds: boolean;
   readonly metaBlocks: boolean;
+  readonly unresolvedBlocks: boolean;
 }
 
 export interface GifExportOptions {
@@ -13,6 +14,7 @@ export interface GifExportOptions {
   readonly includeGrid?: boolean;
   readonly includeBounds?: boolean;
   readonly includeMetaBlocks?: boolean;
+  readonly includeUnresolvedBlocks?: boolean;
 }
 
 export interface ViewerEmbedApi {
@@ -28,6 +30,7 @@ export const DEFAULT_VIEWER_OPTIONS: ViewerOptions = {
   grid: true,
   bounds: true,
   metaBlocks: false,
+  unresolvedBlocks: false,
 };
 
 /**
@@ -42,6 +45,10 @@ export function readViewerOptions(search: string): ViewerOptions {
     metaBlocks: readBoolean(
       parameters.get("meta"),
       DEFAULT_VIEWER_OPTIONS.metaBlocks,
+    ),
+    unresolvedBlocks: readBoolean(
+      parameters.get("unresolved"),
+      DEFAULT_VIEWER_OPTIONS.unresolvedBlocks,
     ),
   };
 }

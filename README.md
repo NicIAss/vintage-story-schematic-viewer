@@ -6,7 +6,7 @@ An unofficial, local-first renderer for Vintage Story JSON schematics. It
 parses the game's sparse schematic format, resolves vanilla block and item
 assets, renders block-entity geometry, and exports rotating GIF previews.
 
-The project is currently **v0.1.0 alpha**. The renderer works as a Vite web app
+The project is currently **v0.2.0 alpha**. The renderer works as a Vite web app
 and reusable TypeScript core. A standards-based web component and published npm
 packages are planned; the supported website integration today is an iframe or
 the same-origin JavaScript bridge.
@@ -17,11 +17,12 @@ the same-origin JavaScript bridge.
 - compiled cube textures and JSON shapes, including variants and `ByType`;
 - chiseled/microblock geometry with schematic rotation handling;
 - chests, crates, shelves, ground storage, piles, support beams, liquids,
-  overlays, soil and foliage tinting;
-- orbit and no-clip fly cameras;
+  overlays, fruit trees, soil and foliage tinting;
+- orbit and no-clip fly cameras, with fly mode omitted on touch-only devices;
 - optional grid, schematic bounds, and technical/meta blocks;
 - auto-framed rotating GIF export; and
-- diagnostics for unresolved blocks instead of silently hiding them.
+- unresolved blocks hidden by default, with diagnostics and an optional viewer
+  toggle.
 
 ## Are Vintage Story assets required?
 
@@ -82,8 +83,9 @@ dev` runs the compiler automatically. Use `pnpm assets:compile` separately only
 when you want to inspect the compiler or refresh assets while Vite is already
 running. A full first compile can take several minutes.
 
-Without a registry the viewer can still parse schematics and display fallback
-geometry, but it cannot reproduce the real block appearance.
+Without a registry the viewer can still parse schematics. Its optional fallback
+geometry can aid diagnostics, but it cannot reproduce the real block
+appearance and unresolved placeholders are hidden by default.
 
 ## Website integration
 
@@ -99,7 +101,7 @@ parameters:
 
 ```html
 <iframe
-  src="https://viewer.example.org/?schematic=https%3A%2F%2Fexample.org%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&grid=off&bounds=off&meta=off"
+  src="https://viewer.example.org/?schematic=https%3A%2F%2Fexample.org%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&grid=off&bounds=off&meta=off&unresolved=off"
   loading="lazy"
   allow="fullscreen">
 </iframe>
@@ -140,6 +142,7 @@ _local/                       Ignored local game/mod/source inputs
 - [Windows and Ubuntu setup and deployment](docs/windows-and-ubuntu.md)
 - [Asset pipeline](docs/asset-pipeline.md)
 - [Website integration](docs/website-integration.md)
+- [Upgrading and rollback](docs/upgrading.md)
 - [Embedding and release architecture](docs/embedding-and-releases.md)
 - [Local-only input layout](docs/local-inputs.md)
 - [Audited Vintage Story asset inventory](docs/vintage-story-assets.md)

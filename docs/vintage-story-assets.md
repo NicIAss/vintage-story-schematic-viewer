@@ -130,7 +130,7 @@ Current compilation result:
 | Indexed PNG textures | 9,582 |
 | Concrete block codes | 16,068 |
 | Concrete item codes | 3,918 |
-| Compiled shared JSON shapes | 2,934 |
+| Compiled shared JSON shapes | 2,953 |
 | Cube codes with a resolved texture | 2,185 |
 | Cube codes missing a direct all-face texture | 57 |
 | JSON5 parse errors | 0 |

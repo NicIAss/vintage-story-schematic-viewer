@@ -53,6 +53,10 @@ export function createSupportBeamSegments(
     if (sectionLength < 0.01) {
       continue;
     }
+    // The game captures the current segment origin before advancing the loop
+    // counter for a short, single-piece beam. Calculating this after the
+    // increment displaces that beam by one full block beyond its endpoint.
+    const sectionStart = start.clone().addScaledVector(direction, distance);
     if (shapeCount > 1 && length < 18 / 16) {
       sectionLength = length;
       distance += 1;
@@ -63,7 +67,6 @@ export function createSupportBeamSegments(
     );
     const modelLength = (shapeIndex + 1) / 4;
     const xScale = shapeCount === 1 ? sectionLength : sectionLength / modelLength;
-    const sectionStart = start.clone().addScaledVector(direction, distance);
 
     // Vintage Story shapes are centered by createJsonShapeGeometry. The final
     // +0.5 translation restores source-model coordinates before applying the

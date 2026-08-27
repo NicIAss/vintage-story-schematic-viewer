@@ -38,6 +38,38 @@ describe("latest registry resolution rules", () => {
     }
   });
 
+  it("preserves per-texture dimensions and element render passes", async () => {
+    const assetRoot = await mkdtemp(path.join(tmpdir(), "vs-asset-compiler-"));
+    try {
+      const blockTypeRoot = path.join(assetRoot, "survival", "blocktypes");
+      const shapeRoot = path.join(assetRoot, "survival", "shapes", "block");
+      const textureRoot = path.join(assetRoot, "survival", "textures", "block");
+      await mkdir(blockTypeRoot, { recursive: true });
+      await mkdir(shapeRoot, { recursive: true });
+      await mkdir(textureRoot, { recursive: true });
+      await writeFile(
+        path.join(blockTypeRoot, "talldoor.json"),
+        `{ code: "talldoor", shape: { base: "block/talldoor" }, textures: { old: { base: "block/talldoor" } } }`,
+        "utf8",
+      );
+      await writeFile(
+        path.join(shapeRoot, "talldoor.json"),
+        `{ textureWidth: 16, textureHeight: 16, textureSizes: { old: [16, 32] }, elements: [{ renderPass: 3, from: [0, 0, 0], to: [16, 32, 2], faces: { north: { texture: "#old", uv: [0, 0, 16, 32] } } }] }`,
+        "utf8",
+      );
+      await writeFile(path.join(textureRoot, "talldoor.png"), "fixture", "utf8");
+
+      const registry = await compileAssetRegistry(assetRoot);
+      const shapeKey = registry.blocks["game:talldoor"]?.shape?.key;
+
+      expect(shapeKey).toBe("survival:shapes/block/talldoor");
+      expect(registry.shapes[shapeKey!]?.textureSizes?.old).toEqual([16, 32]);
+      expect(registry.shapes[shapeKey!]?.elements[0]?.renderPass).toBe(3);
+    } finally {
+      await rm(assetRoot, { recursive: true, force: true });
+    }
+  });
+
   it("uses the first matching ByType entry then fills variant placeholders", () => {
     const source = {
       texturesByType: {

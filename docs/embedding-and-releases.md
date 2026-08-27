@@ -22,7 +22,7 @@ wrappers can be published later if demand justifies them.
 
 ## Consumer API
 
-### Current v0.1.0 bridge
+### Current v0.2.0 bridge
 
 Before the web component is extracted, the viewer accepts a schematic URL,
 asset-registry URL, and stable display options through its URL. This lets wiki
@@ -30,7 +30,7 @@ and database prototypes load a structure and choose different presets without
 changing renderer code:
 
 ```text
-https://viewer.example.org/?schematic=https%3A%2F%2Fwiki.example.org%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&grid=off&bounds=off&meta=off
+https://viewer.example.org/?schematic=https%3A%2F%2Fwiki.example.org%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&grid=off&bounds=off&meta=off&unresolved=off
 ```
 
 The accepted boolean values are `on`/`off`, `true`/`false`, `1`/`0`, and
@@ -41,6 +41,7 @@ iframe.contentWindow.vsSchematicViewer.setOptions({
   grid: false,
   bounds: false,
   metaBlocks: false,
+  unresolvedBlocks: false,
 });
 ```
 
@@ -73,14 +74,16 @@ const gif = await iframe.contentWindow.vsSchematicViewer.exportGif({
   includeGrid: false,
   includeBounds: false,
   includeMetaBlocks: false,
+  includeUnresolvedBlocks: false,
 });
 ```
 
 The result is an `image/gif` `Blob`. Grid and schematic bounds are excluded by
 default even when they are visible in the interactive viewer. Meta blocks are
 also hidden and excluded from camera framing unless `includeMetaBlocks` is set
-explicitly. Sizes are clamped to 128–1024 pixels, frame counts to 12–90, and
-rates to 4–30 frames per second.
+explicitly. Unresolved placeholders follow the same rule through
+`includeUnresolvedBlocks`. Sizes are clamped to 128–1024 pixels, frame counts
+to 12–90, and rates to 4–30 frames per second.
 The default camera measures the rendered silhouette throughout the rotation and
 uses one stable, structure-specific zoom instead of fitting the schematic's
 full 3D diagonal.
@@ -170,7 +173,7 @@ Wiki and database pages do not copy renderer source or block mappings.
 ## Repository and release workflow
 
 The current monorepo already has the correct first split: reusable core,
-asset compiler, and product UI. Before the first public release it should add:
+asset compiler, and product UI. The next packaging milestones should add:
 
 1. the web-component package and a small embed fixture;
 2. CI for tests, type checks, production build, and corpus coverage thresholds;
@@ -182,6 +185,10 @@ asset compiler, and product UI. Before the first public release it should add:
 Consumers should pin versions in production. A `latest` URL is convenient for
 demos but is unsuitable for a wiki or database because an untested update could
 change thousands of existing embeds at once.
+
+See [Upgrading and rollback](upgrading.md) for the current staged deployment,
+registry-rebuild decision, compatibility checks, and instructions intended for
+both human operators and automated maintenance agents.
 
 ## Game asset licensing boundary
 

@@ -55,6 +55,11 @@ import {
 } from "./supportBeams";
 import { resolveCoalPiles, type ResolvedCoalPile } from "./coalPiles";
 import { resolveMicroblockFaceTexture } from "./microblockMaterials";
+import {
+  isFruitTreeDefinition,
+  resolveFruitTrees,
+  type ResolvedFruitTreePart,
+} from "./fruitTrees";
 
 export interface SchematicSceneStats {
   readonly texturedBlockCount: number;
@@ -69,6 +74,8 @@ export interface SchematicSceneStats {
   readonly groundStorageCodeCount: number;
   readonly supportBeamBlockCount: number;
   readonly supportBeamCodeCount: number;
+  readonly fruitTreeBlockCount: number;
+  readonly fruitTreeCodeCount: number;
   readonly decorCount: number;
   readonly decorCodeCount: number;
   readonly unresolvedDecorCount: number;
@@ -76,6 +83,7 @@ export interface SchematicSceneStats {
   readonly failedTextureCount: number;
   readonly metaBlockCount: number;
   readonly metaCodeCount: number;
+  readonly metaPlaceholderBlockCount: number;
   readonly embeddedMetaMaterialCount: number;
   readonly placeholderBreakdown: readonly PlaceholderBreakdownEntry[];
 }
@@ -91,6 +99,7 @@ export interface SchematicScene {
   readonly renderedBlocks: readonly SchematicBlock[];
   readonly stats: SchematicSceneStats;
   setMetaBlocksVisible(visible: boolean): void;
+  setPlaceholderBlocksVisible(visible: boolean): void;
   dispose(): void;
 }
 
@@ -136,6 +145,7 @@ export async function createSchematicScene(
   const blocksByCode = groupBlocksByCode(renderedBlocks);
   const resolvedMicroblocks = resolveMicroblocks(schematic, registry);
   const resolvedEntityShapes = resolveEntityShapes(schematic, registry);
+  const resolvedFruitTrees = resolveFruitTrees(schematic, registry);
   const resolvedSupportBeams = resolveSupportBeams(schematic, registry);
   const resolvedGroundStorage = registry === null
     ? null
@@ -190,6 +200,13 @@ export async function createSchematicScene(
   for (const entityShape of resolvedEntityShapes.values()) {
     for (const faceTexture of Object.values(entityShape.reference.textures)) {
       addRequestedFaceTexture(faceTexture, requestedTextures);
+    }
+  }
+  for (const fruitTree of resolvedFruitTrees.values()) {
+    for (const part of fruitTree.parts) {
+      for (const faceTexture of Object.values(part.reference.textures)) {
+        addRequestedFaceTexture(faceTexture, requestedTextures);
+      }
     }
   }
   for (const content of resolvedGroundStorage?.contents ?? []) {
@@ -268,6 +285,8 @@ export async function createSchematicScene(
   let groundStorageCodeCount = 0;
   let supportBeamBlockCount = 0;
   let supportBeamCodeCount = 0;
+  let fruitTreeBlockCount = 0;
+  let fruitTreeCodeCount = 0;
   let decorCount = 0;
   let decorCodeCount = 0;
   let unresolvedDecorCount = 0;
@@ -314,10 +333,11 @@ export async function createSchematicScene(
             customGeometries.add(builtShape.geometry);
             group = {
               geometry: builtShape.geometry,
-              material: builtShape.materialAliases.map((alias) =>
+              material: builtShape.materialAliases.map((alias, materialIndex) =>
                 materialForFace(
                   reference.textures[alias] as RegistryFaceTexture,
-                  isTransparentDefinition(beam.definition),
+                  isTransparentDefinition(beam.definition)
+                    || builtShape.materialTransparencies[materialIndex] === true,
                   true,
                   loadedTextures,
                   faceTextureCache,
@@ -477,6 +497,130 @@ export async function createSchematicScene(
   for (const [code, codeBlocks] of blocksByCode) {
     const definition = registry?.blocks[code];
     const isMeta = definition?.isMeta === true || code.startsWith("game:meta-");
+    if (
+      definition !== undefined
+      && isFruitTreeDefinition(definition.className)
+      && registry !== null
+    ) {
+      const groups = new Map<string, {
+        readonly data: ResolvedFruitTreePart;
+        readonly blocks: SchematicBlock[];
+      }>();
+      const failedPositions = new Set<number>();
+      for (const block of codeBlocks) {
+        const fruitTree = resolvedFruitTrees.get(block.packedPosition);
+        if (fruitTree === undefined || fruitTree.parts.length === 0) {
+          failedPositions.add(block.packedPosition);
+          continue;
+        }
+        for (const part of fruitTree.parts) {
+          const existing = groups.get(part.signature);
+          if (existing === undefined) {
+            groups.set(part.signature, { data: part, blocks: [block] });
+          } else {
+            existing.blocks.push(block);
+          }
+        }
+      }
+
+      const builtGroups: {
+        readonly data: ResolvedFruitTreePart;
+        readonly blocks: readonly SchematicBlock[];
+        readonly builtShape: NonNullable<ReturnType<typeof createJsonShapeGeometry>>;
+      }[] = [];
+      for (const group of groups.values()) {
+        const compiledShape = registry.shapes[group.data.reference.key];
+        const builtShape = compiledShape === undefined
+          || !hasEveryShapeReferenceTexture(group.data.reference, loadedTextures)
+          ? null
+          : createJsonShapeGeometry(
+              compiledShape,
+              group.data.reference,
+              null,
+              null,
+              group.data.selectedElementNames,
+            );
+        if (builtShape === null) {
+          group.blocks.forEach((block) => failedPositions.add(block.packedPosition));
+          continue;
+        }
+        customGeometries.add(builtShape.geometry);
+        builtGroups.push({ data: group.data, blocks: group.blocks, builtShape });
+      }
+
+      for (const group of builtGroups) {
+        const blocks = group.blocks.filter((block) => !failedPositions.has(block.packedPosition));
+        if (blocks.length === 0) continue;
+        const fruitTreeMaterials = group.builtShape.materialAliases.map((alias, materialIndex) =>
+          materialForFace(
+            group.data.reference.textures[alias] as RegistryFaceTexture,
+            isTransparentDefinition(definition)
+              || group.builtShape.materialTransparencies[materialIndex] === true,
+            true,
+            loadedTextures,
+            faceTextureCache,
+            materialCache,
+            materials,
+            derivedTextures,
+            resolvePreviewColorTint(
+              definition,
+              loadedTextures,
+              registry,
+              group.data.climateColorMap === null && group.data.seasonColorMap === null
+                ? group.builtShape.materialColorMaps[materialIndex]
+                : {
+                    climate: group.data.climateColorMap,
+                    season: group.data.seasonColorMap,
+                  },
+            ),
+          ),
+        );
+        const mesh = createPositionedInstancedMesh(
+          group.builtShape.geometry,
+          fruitTreeMaterials,
+          blocks,
+          schematic,
+          matrix,
+        );
+        mesh.name = `Dynamic fruit tree ${code}`;
+        mesh.userData.blockCode = code;
+        mesh.userData.renderMode = group.data.renderMode;
+        object.add(mesh);
+      }
+
+      const fallbackBlocks = codeBlocks.filter((block) => failedPositions.has(block.packedPosition));
+      if (fallbackBlocks.length > 0) {
+        const mesh = createPositionedInstancedMesh(
+          placeholderGeometry,
+          createPlaceholderMaterial(code, false, materials),
+          fallbackBlocks,
+          schematic,
+          matrix,
+        );
+        mesh.name = `Placeholder ${code}`;
+        mesh.userData.blockCode = code;
+        mesh.userData.renderMode = "placeholder";
+        object.add(mesh);
+        placeholderBlockCount += fallbackBlocks.length;
+        placeholderCodeCount += 1;
+        addPlaceholderBreakdown(
+          placeholderBreakdown,
+          code,
+          fallbackBlocks.length,
+          "fruit-tree block entity, dynamic shape, or species texture unresolved",
+        );
+      }
+      const renderedFruitTreeCount = codeBlocks.length - fallbackBlocks.length;
+      if (renderedFruitTreeCount > 0) {
+        texturedBlockCount += renderedFruitTreeCount;
+        texturedCodeCount += 1;
+        shapedBlockCount += renderedFruitTreeCount;
+        shapedCodeCount += 1;
+        fruitTreeBlockCount += renderedFruitTreeCount;
+        fruitTreeCodeCount += 1;
+      }
+      continue;
+    }
     if (isChiseledDefinition(definition) && registry !== null) {
       const groups = groupResolvedMicroblocks(codeBlocks, resolvedMicroblocks);
       let renderedMicroblocksForCode = 0;
@@ -610,10 +754,11 @@ export async function createSchematicScene(
               customGeometries.add(builtShape.geometry);
               group = {
                 geometry: builtShape.geometry,
-                material: builtShape.materialAliases.map((alias) =>
+                material: builtShape.materialAliases.map((alias, materialIndex) =>
                   materialForFace(
                     reference.textures[alias] as RegistryFaceTexture,
-                    isTransparentDefinition(beam.definition),
+                    isTransparentDefinition(beam.definition)
+                      || builtShape.materialTransparencies[materialIndex] === true,
                     true,
                     loadedTextures,
                     faceTextureCache,
@@ -803,12 +948,12 @@ export async function createSchematicScene(
           continue;
         }
         customGeometries.add(builtShape.geometry);
-        const contentMaterials = builtShape.materialAliases.map((alias) =>
+        const contentMaterials = builtShape.materialAliases.map((alias, materialIndex) =>
           materialForFace(
             group.data.reference.textures[alias] as RegistryFaceTexture,
-            group.data.blockDefinition === null
-              ? false
-              : isTransparentDefinition(group.data.blockDefinition),
+            builtShape.materialTransparencies[materialIndex] === true
+              || (group.data.blockDefinition !== null
+                && isTransparentDefinition(group.data.blockDefinition)),
             true,
             loadedTextures,
             faceTextureCache,
@@ -923,10 +1068,10 @@ export async function createSchematicScene(
           continue;
         }
         customGeometries.add(builtShape.geometry);
-        const pileMaterials = builtShape.materialAliases.map((alias) =>
+        const pileMaterials = builtShape.materialAliases.map((alias, materialIndex) =>
           materialForFace(
             reference.textures[alias] as RegistryFaceTexture,
-            false,
+            builtShape.materialTransparencies[materialIndex] === true,
             true,
             loadedTextures,
             faceTextureCache,
@@ -1005,7 +1150,8 @@ export async function createSchematicScene(
         const entityMaterials = builtShape.materialAliases.map((alias, materialIndex) =>
           materialForFace(
             group.data.reference.textures[alias] as RegistryFaceTexture,
-            isTransparentDefinition(definition),
+            isTransparentDefinition(definition)
+              || builtShape.materialTransparencies[materialIndex] === true,
             true,
             loadedTextures,
             faceTextureCache,
@@ -1151,7 +1297,8 @@ export async function createSchematicScene(
         material = builtShape.materialAliases.map((alias, materialIndex) =>
           materialForFace(
             definition.shape?.textures[alias] as RegistryFaceTexture,
-            isTransparentDefinition(definition),
+            isTransparentDefinition(definition)
+              || builtShape.materialTransparencies[materialIndex] === true,
             true,
             loadedTextures,
             faceTextureCache,
@@ -1219,6 +1366,29 @@ export async function createSchematicScene(
     }
   }
 
+  const placeholderMeshes: InstancedMesh[] = [];
+  object.traverse((child) => {
+    if (
+      child instanceof InstancedMesh
+      && child.userData.renderMode === "placeholder"
+    ) {
+      placeholderMeshes.push(child);
+    }
+  });
+  const metaPlaceholderBlockCount = placeholderMeshes.reduce(
+    (count, mesh) => count + (mesh.userData.isMeta === true ? mesh.count : 0),
+    0,
+  );
+  let metaBlocksVisible = false;
+  let placeholderBlocksVisible = false;
+  const updateSpecialMeshVisibility = (): void => {
+    for (const mesh of new Set([...metaMeshes, ...placeholderMeshes])) {
+      mesh.visible = (mesh.userData.isMeta !== true || metaBlocksVisible)
+        && (mesh.userData.renderMode !== "placeholder" || placeholderBlocksVisible);
+    }
+  };
+  updateSpecialMeshVisibility();
+
   return {
     object,
     renderedBlocks,
@@ -1235,6 +1405,8 @@ export async function createSchematicScene(
       groundStorageCodeCount,
       supportBeamBlockCount,
       supportBeamCodeCount,
+      fruitTreeBlockCount,
+      fruitTreeCodeCount,
       decorCount,
       decorCodeCount,
       unresolvedDecorCount,
@@ -1242,17 +1414,21 @@ export async function createSchematicScene(
       failedTextureCount,
       metaBlockCount,
       metaCodeCount,
+      metaPlaceholderBlockCount,
       embeddedMetaMaterialCount: embeddedMetaMaterials.size,
       placeholderBreakdown: [...placeholderBreakdown.values()]
         .sort((left, right) => right.count - left.count || left.code.localeCompare(right.code)),
     },
     setMetaBlocksVisible(visible: boolean): void {
-      for (const mesh of metaMeshes) {
-        mesh.visible = visible;
-      }
+      metaBlocksVisible = visible;
+      updateSpecialMeshVisibility();
       for (const material of embeddedMetaMaterials) {
         setEmbeddedMetaMaterialVisible(material, visible);
       }
+    },
+    setPlaceholderBlocksVisible(visible: boolean): void {
+      placeholderBlocksVisible = visible;
+      updateSpecialMeshVisibility();
     },
     dispose(): void {
       exactCubeGeometry.dispose();

@@ -123,8 +123,10 @@ The generated `asset-registry.json` contains:
 - expanded concrete block and item codes;
 - resolved legacy aliases and texture candidates;
 - cube face textures, overlays and rotations;
-- compiled JSON shape elements, UVs, transforms and texture bindings;
-- block-entity-selected shapes and ground-storage layouts;
+- compiled JSON shape elements, UVs, transforms, texture bindings, logical
+  texture dimensions, and element render passes;
+- block-entity-selected shapes, fruit-tree resources, and ground-storage
+  layouts;
 - support-beam, decor, pile and tint metadata; and
 - compiler statistics, diagnostics and compatibility metadata.
 
@@ -144,6 +146,13 @@ time. The registry still supplies the referenced material textures.
 Renderer releases and asset manifests are versioned independently. A renderer
 bug fix should not require republishing textures; a game asset update should not
 require copying renderer source into every consumer website.
+
+The 0.2.0 compiler adds per-texture dimensions, per-element render passes, and
+fruit-tree resources to the still-compatible format-v2 registry. An older
+format-v2 registry can load, but it cannot provide the associated tall-door UV,
+window transparency, or dynamic fruit-tree fixes. Rebuild the registry when
+upgrading to 0.2.0. See [Upgrading and rollback](upgrading.md) for the complete
+staged website procedure.
 
 ## Licensing boundary
 

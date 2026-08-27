@@ -23,6 +23,8 @@ export interface CompiledShapeFace {
 }
 
 export interface CompiledShapeElement {
+  readonly name: string | null;
+  readonly renderPass?: number | null;
   readonly from: readonly [number, number, number];
   readonly to: readonly [number, number, number];
   readonly rotationOrigin: readonly [number, number, number];
@@ -43,6 +45,7 @@ export interface CompiledShape {
   readonly sourceFile: string;
   readonly textureWidth: number;
   readonly textureHeight: number;
+  readonly textureSizes?: Readonly<Record<string, readonly [number, number]>>;
   readonly elements: readonly CompiledShapeElement[];
 }
 
@@ -101,6 +104,20 @@ export interface CompiledDecorProperties {
 
 export interface CompiledPileProperties {
   readonly textures: Readonly<Record<string, RegistryFaceTexture>>;
+}
+
+export interface CompiledFruitTreeType {
+  readonly textures: Readonly<Record<string, RegistryFaceTexture>>;
+  readonly climateColorMap: string;
+  readonly seasonColorMap: string | null;
+  readonly evergreen: boolean;
+  readonly ripeFruitShapeName: string | null;
+}
+
+export interface CompiledFruitTreeResources {
+  readonly shapes: Readonly<Record<string, CompiledShapeReference>>;
+  readonly types: Readonly<Record<string, CompiledFruitTreeType>>;
+  readonly deadTreeTexture: RegistryFaceTexture | null;
 }
 
 export interface CompiledBlockDefinition {
@@ -169,4 +186,5 @@ export interface AssetRegistry {
   readonly items: Readonly<Record<string, CompiledItemDefinition>>;
   readonly colorMaps: Readonly<Record<string, RegistryTexture>>;
   readonly shapes: Readonly<Record<string, CompiledShape>>;
+  readonly fruitTrees?: CompiledFruitTreeResources | null;
 }

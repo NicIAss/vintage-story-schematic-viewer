@@ -29,9 +29,15 @@ import {
   type ViewerEmbedApi,
   type ViewerOptions,
 } from "./viewerOptions.js";
+import {
+  calculateAdaptivePixelRatio,
+  supportsFlyCamera,
+  TARGET_MAX_FRAMES_PER_SECOND,
+} from "./performancePolicy.js";
 import "./style.css";
 
 const MAX_REMOTE_SCHEMATIC_BYTES = 16 * 1024 * 1024;
+const MIN_FRAME_INTERVAL_MS = 1000 / TARGET_MAX_FRAMES_PER_SECOND;
 
 declare global {
   interface Window {
@@ -58,6 +64,7 @@ app.innerHTML = [
   '      <button id="bounds-button" class="button button-toggle" type="button" aria-pressed="true">Bounds: On</button>',
   '      <button id="export-button" class="button" type="button" disabled>Export GIF</button>',
   '      <button id="meta-button" class="button button-toggle" type="button" aria-pressed="false" disabled>Show meta blocks</button>',
+  '      <button id="unresolved-button" class="button button-toggle" type="button" aria-pressed="false" disabled>Show unresolved</button>',
   '      <button id="flight-button" class="button button-toggle" type="button" aria-pressed="false" disabled>Fly camera</button>',
   '      <button id="recenter-button" class="button" type="button" disabled>Recenter</button>',
   '      <button id="top-button" class="button" type="button" disabled>Top view</button>',
@@ -102,12 +109,12 @@ app.innerHTML = [
   '        <p class="section-note">Placement counts are for this schematic. Hidden meta blocks remain resolved so they can be shown again.</p>',
   '        <dl id="asset-stats" class="stats-list">',
   '          <div><dt>Textured blocks</dt><dd>—</dd></div>',
-  '          <div><dt>Placeholders</dt><dd>—</dd></div>',
+  '          <div><dt>Unresolved blocks</dt><dd>—</dd></div>',
   '          <div><dt>Textures loaded</dt><dd>—</dd></div>',
   "        </dl>",
   "      </section>",
   '      <section class="inspector-section">',
-  '        <h3>Placeholder breakdown</h3>',
+  '        <h3>Unresolved blocks</h3>',
   '        <div id="unsupported-list" class="unsupported-list muted">No schematic loaded.</div>',
   "      </section>",
   '      <section class="inspector-section warnings-section">',
@@ -130,6 +137,7 @@ const gridButton = requireElement<HTMLButtonElement>("grid-button");
 const boundsButton = requireElement<HTMLButtonElement>("bounds-button");
 const exportButton = requireElement<HTMLButtonElement>("export-button");
 const metaButton = requireElement<HTMLButtonElement>("meta-button");
+const unresolvedButton = requireElement<HTMLButtonElement>("unresolved-button");
 const flightButton = requireElement<HTMLButtonElement>("flight-button");
 const emptyOpenButton = requireElement<HTMLButtonElement>("empty-open-button");
 const recenterButton = requireElement<HTMLButtonElement>("recenter-button");
@@ -159,7 +167,6 @@ const renderer = new WebGLRenderer({
   powerPreference: "high-performance",
 });
 renderer.outputColorSpace = SRGBColorSpace;
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 viewportElement.prepend(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -192,6 +199,7 @@ let loadSequence = 0;
 let showGrid = initialViewerOptions.grid;
 let showBounds = initialViewerOptions.bounds;
 let showMetaBlocks = initialViewerOptions.metaBlocks;
+let showUnresolvedBlocks = initialViewerOptions.unresolvedBlocks;
 let gifExportRunning = false;
 let gifExportProgress = 0;
 let flightMode = false;
@@ -201,12 +209,17 @@ let flightPointerId: number | null = null;
 let flightPointerX = 0;
 let flightPointerY = 0;
 let lastFrameTime = performance.now();
+let nextFrameDeadline = 0;
+let renderRequestId: number | null = null;
 const pressedKeys = new Set<string>();
 const flightEuler = new Euler(0, 0, 0, "YXZ");
 const flightForward = new Vector3();
 const flightRight = new Vector3();
 const flightMovement = new Vector3();
 const assetRegistryPromise = loadAssetRegistry();
+const coarsePointerMedia = window.matchMedia("(pointer: coarse)");
+const hoverUnavailableMedia = window.matchMedia("(hover: none)");
+let flyCameraAvailable = readFlyCameraAvailability();
 
 window.vsSchematicViewer = {
   version: VIEWER_VERSION,
@@ -220,11 +233,15 @@ updateGridControls();
 updateBoundsControls();
 updateMetaControls();
 updateGifExportControls();
+updateFlightAvailability();
 
 const resizeObserver = new ResizeObserver(() => resizeViewport());
 resizeObserver.observe(viewportElement);
+controls.addEventListener("change", requestRender);
+coarsePointerMedia.addEventListener("change", updateFlightAvailability);
+hoverUnavailableMedia.addEventListener("change", updateFlightAvailability);
 resizeViewport();
-renderer.setAnimationLoop(renderFrame);
+requestRender();
 
 openButton.addEventListener("click", () => inputElement.click());
 emptyOpenButton.addEventListener("click", () => inputElement.click());
@@ -239,6 +256,9 @@ exportButton.addEventListener("click", () => {
 });
 metaButton.addEventListener("click", () => {
   applyViewerOptions({ metaBlocks: !showMetaBlocks });
+});
+unresolvedButton.addEventListener("click", () => {
+  applyViewerOptions({ unresolvedBlocks: !showUnresolvedBlocks });
 });
 flightButton.addEventListener("click", () => {
   setFlightMode(!flightMode);
@@ -311,13 +331,23 @@ document.addEventListener("mousemove", (event) => {
 });
 window.addEventListener("keydown", (event) => {
   if (!flightMode || !isFlightKey(event.code)) return;
+  if (pressedKeys.size === 0) lastFrameTime = performance.now();
   pressedKeys.add(event.code);
+  requestRender();
   event.preventDefault();
 });
 window.addEventListener("keyup", (event) => {
   pressedKeys.delete(event.code);
+  requestRender();
 });
 window.addEventListener("blur", () => pressedKeys.clear());
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    lastFrameTime = performance.now();
+    nextFrameDeadline = 0;
+    requestRender();
+  }
+});
 
 viewportElement.addEventListener("dragenter", (event) => {
   event.preventDefault();
@@ -449,6 +479,7 @@ async function displaySchematic(
   }
   activeScene = createdScene;
   activeScene.setMetaBlocksVisible(showMetaBlocks);
+  activeScene.setPlaceholderBlocksVisible(showUnresolvedBlocks);
   scene.add(activeScene.object);
 
   const bounds = new Box3(
@@ -465,7 +496,7 @@ async function displaySchematic(
   scene.add(activeBounds);
 
   emptyState.classList.add("is-hidden");
-  flightButton.disabled = false;
+  flightButton.disabled = !flyCameraAvailable;
   recenterButton.disabled = false;
   topButton.disabled = false;
   fileNameElement.textContent = fileName;
@@ -473,6 +504,7 @@ async function displaySchematic(
     "Saved by Vintage Story " + (schematic.gameVersion ?? "unknown version");
   updateInspectorStats();
   updateMetaControls();
+  updateUnresolvedControls();
   updateBoundsControls();
   updateGifExportControls();
 
@@ -505,7 +537,7 @@ async function displaySchematic(
     `Loaded ${schematic.diagnostics.blockCount.toLocaleString()} sparse entries · ` +
       `${activeScene.renderedBlocks.length.toLocaleString()} render placements · ` +
       `${activeScene.stats.texturedBlockCount.toLocaleString()} resolved · ` +
-      `${activeScene.stats.placeholderBlockCount.toLocaleString()} fallback.`,
+      `${activeScene.stats.placeholderBlockCount.toLocaleString()} unresolved.`,
   );
 }
 
@@ -513,10 +545,19 @@ function updateInspectorStats(): void {
   if (activeSchematic === null || activeScene === null) {
     return;
   }
+  const hiddenMetaCount = showMetaBlocks ? 0 : activeScene.stats.metaBlockCount;
+  const hiddenPlaceholderCount = showUnresolvedBlocks
+    ? 0
+    : activeScene.stats.placeholderBlockCount;
+  const doubleHiddenCount = !showMetaBlocks && !showUnresolvedBlocks
+    ? activeScene.stats.metaPlaceholderBlockCount
+    : 0;
   const displayedBlockCount = Math.max(
     0,
-    activeScene.renderedBlocks.length -
-      (showMetaBlocks ? 0 : activeScene.stats.metaBlockCount),
+    activeScene.renderedBlocks.length
+      - hiddenMetaCount
+      - hiddenPlaceholderCount
+      + doubleHiddenCount,
   );
   structureStats.innerHTML = statRows([
     ["Dimensions", formatDimensions(activeSchematic)],
@@ -547,18 +588,22 @@ function updateInspectorStats(): void {
     ["Chiseled placements", activeScene.stats.microblockBlockCount.toLocaleString()],
     ["Ground-storage placements", activeScene.stats.groundStorageBlockCount.toLocaleString()],
     ["Support-beam placements", activeScene.stats.supportBeamBlockCount.toLocaleString()],
+    ["Fruit-tree placements", activeScene.stats.fruitTreeBlockCount.toLocaleString()],
     [
       "Decor overlays",
       `${activeScene.stats.decorCount.toLocaleString()} / ${activeSchematic.diagnostics.decorCount.toLocaleString()}`,
     ],
     ["Decor codes", activeScene.stats.decorCodeCount.toLocaleString()],
     ["Unresolved decors", activeScene.stats.unresolvedDecorCount.toLocaleString()],
-    ["Fallback placements", activeScene.stats.placeholderBlockCount.toLocaleString()],
+    [
+      "Unresolved blocks",
+      `${activeScene.stats.placeholderBlockCount.toLocaleString()} ${showUnresolvedBlocks ? "shown" : "hidden"}`,
+    ],
     ["Resolved code types", activeScene.stats.texturedCodeCount.toLocaleString()],
     ["JSON-shape code types", activeScene.stats.shapedCodeCount.toLocaleString()],
     ["Chiseled code types", activeScene.stats.microblockCodeCount.toLocaleString()],
     ["Support-beam code types", activeScene.stats.supportBeamCodeCount.toLocaleString()],
-    ["Fallback code types", activeScene.stats.placeholderCodeCount.toLocaleString()],
+    ["Unresolved code types", activeScene.stats.placeholderCodeCount.toLocaleString()],
     ["Textures loaded", activeScene.stats.loadedTextureCount.toLocaleString()],
     [
       "Meta blocks",
@@ -590,6 +635,18 @@ function updateMetaControls(): void {
   metaButton.setAttribute("aria-pressed", String(showMetaBlocks && hasMetaBlocks));
 }
 
+function updateUnresolvedControls(): void {
+  const hasUnresolvedBlocks = (activeScene?.stats.placeholderBlockCount ?? 0) > 0;
+  unresolvedButton.disabled = !hasUnresolvedBlocks;
+  unresolvedButton.textContent = showUnresolvedBlocks && hasUnresolvedBlocks
+    ? "Hide unresolved"
+    : "Show unresolved";
+  unresolvedButton.setAttribute(
+    "aria-pressed",
+    String(showUnresolvedBlocks && hasUnresolvedBlocks),
+  );
+}
+
 function updateGridControls(): void {
   grid.visible = showGrid;
   gridButton.textContent = `Grid: ${showGrid ? "On" : "Off"}`;
@@ -607,6 +664,7 @@ function getViewerOptions(): ViewerOptions {
     grid: showGrid,
     bounds: showBounds,
     metaBlocks: showMetaBlocks,
+    unresolvedBlocks: showUnresolvedBlocks,
   };
 }
 
@@ -616,11 +674,17 @@ function applyViewerOptions(options: Partial<ViewerOptions>): ViewerOptions {
   if (typeof options.metaBlocks === "boolean") {
     showMetaBlocks = options.metaBlocks;
   }
+  if (typeof options.unresolvedBlocks === "boolean") {
+    showUnresolvedBlocks = options.unresolvedBlocks;
+  }
   activeScene?.setMetaBlocksVisible(showMetaBlocks);
+  activeScene?.setPlaceholderBlocksVisible(showUnresolvedBlocks);
   updateGridControls();
   updateBoundsControls();
   updateMetaControls();
+  updateUnresolvedControls();
   updateInspectorStats();
+  requestRender();
   const applied = getViewerOptions();
   window.dispatchEvent(new CustomEvent("vsvieweroptionschange", { detail: applied }));
   return applied;
@@ -646,13 +710,16 @@ async function exportActiveSchematicGif(
   const schematicScene = activeScene;
   const bounds = activeBounds;
   const includeMetaBlocks = options.includeMetaBlocks ?? false;
+  const includeUnresolvedBlocks = options.includeUnresolvedBlocks ?? false;
   const previousMetaBlocksVisibility = showMetaBlocks;
+  const previousUnresolvedBlocksVisibility = showUnresolvedBlocks;
   const previousStatus = statusMessage.textContent ?? "Ready";
   gifExportRunning = true;
   gifExportProgress = 0;
   updateGifExportControls();
   try {
     schematicScene.setMetaBlocksVisible(includeMetaBlocks);
+    schematicScene.setPlaceholderBlocksVisible(includeUnresolvedBlocks);
     scene.updateMatrixWorld(true);
     const contentBounds = visibleRenderableBounds(schematicScene.object);
     const metaBlockCodes = collectMetaBlockCodes(schematicScene.object);
@@ -675,10 +742,12 @@ async function exportActiveSchematicGif(
     );
   } finally {
     schematicScene.setMetaBlocksVisible(previousMetaBlocksVisibility);
+    schematicScene.setPlaceholderBlocksVisible(previousUnresolvedBlocksVisibility);
     gifExportRunning = false;
     gifExportProgress = 0;
     updateGifExportControls();
     setStatus(previousStatus);
+    requestRender();
   }
 }
 
@@ -777,6 +846,7 @@ function clearActiveScene(): void {
     activeBounds = null;
   }
   updateGifExportControls();
+  requestRender();
 }
 
 function fitCamera(schematic: ParsedSchematic, topView: boolean): void {
@@ -841,18 +911,40 @@ function setStatus(message: string): void {
 function resizeViewport(): void {
   const width = Math.max(1, viewportElement.clientWidth);
   const height = Math.max(1, viewportElement.clientHeight);
+  const pixelRatio = calculateAdaptivePixelRatio({
+    width,
+    height,
+    devicePixelRatio: window.devicePixelRatio,
+  });
+  if (renderer.getPixelRatio() !== pixelRatio) {
+    renderer.setPixelRatio(pixelRatio);
+  }
   renderer.setSize(width, height, false);
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
+  requestRender();
 }
 
 function renderFrame(time: number): void {
+  renderRequestId = null;
+  if (document.hidden) return;
+  if (nextFrameDeadline > 0 && time + 0.5 < nextFrameDeadline) {
+    requestRender();
+    return;
+  }
+  if (nextFrameDeadline === 0 || time - nextFrameDeadline > MIN_FRAME_INTERVAL_MS * 2) {
+    nextFrameDeadline = time;
+  }
+  do {
+    nextFrameDeadline += MIN_FRAME_INTERVAL_MS;
+  } while (nextFrameDeadline <= time);
   const deltaSeconds = Math.min(0.1, Math.max(0, (time - lastFrameTime) / 1000));
   lastFrameTime = time;
+  let cameraChanged = false;
   if (flightMode) {
-    updateFlightMovement(deltaSeconds);
+    cameraChanged = updateFlightMovement(deltaSeconds);
   } else {
-    controls.update();
+    cameraChanged = controls.update();
   }
   renderer.render(scene, camera);
   if (time - lastInfoUpdate > 500) {
@@ -863,10 +955,21 @@ function renderFrame(time: number): void {
       " triangles";
     lastInfoUpdate = time;
   }
+  if (cameraChanged || (flightMode && pressedKeys.size > 0)) {
+    requestRender();
+  }
+}
+
+function requestRender(): void {
+  if (renderRequestId !== null || document.hidden) return;
+  renderRequestId = window.requestAnimationFrame(renderFrame);
 }
 
 function setFlightMode(enabled: boolean): void {
-  if (enabled === flightMode || (enabled && activeSchematic === null)) {
+  if (
+    enabled === flightMode
+    || (enabled && (activeSchematic === null || !flyCameraAvailable))
+  ) {
     updateFlightControls();
     return;
   }
@@ -887,6 +990,7 @@ function setFlightMode(enabled: boolean): void {
     controls.update();
   }
   updateFlightControls();
+  requestRender();
 }
 
 function updateFlightControls(): void {
@@ -916,6 +1020,7 @@ function applyFlightLook(movementX: number, movementY: number): void {
   flightEuler.x -= movementY * 0.0022;
   flightEuler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, flightEuler.x));
   camera.quaternion.setFromEuler(flightEuler);
+  requestRender();
 }
 
 function finishFlightDrag(event?: PointerEvent): void {
@@ -932,7 +1037,7 @@ function finishFlightDrag(event?: PointerEvent): void {
   if (flightMode) updateFlightControls();
 }
 
-function updateFlightMovement(deltaSeconds: number): void {
+function updateFlightMovement(deltaSeconds: number): boolean {
   camera.getWorldDirection(flightForward).normalize();
   flightRight.crossVectors(flightForward, camera.up).normalize();
   flightMovement.set(0, 0, 0);
@@ -942,12 +1047,27 @@ function updateFlightMovement(deltaSeconds: number): void {
   if (pressedKeys.has("KeyA")) flightMovement.sub(flightRight);
   if (pressedKeys.has("Space")) flightMovement.y += 1;
   if (pressedKeys.has("ShiftLeft") || pressedKeys.has("ShiftRight")) flightMovement.y -= 1;
-  if (flightMovement.lengthSq() === 0) return;
+  if (flightMovement.lengthSq() === 0) return false;
   const boosted = pressedKeys.has("ControlLeft") || pressedKeys.has("ControlRight");
   camera.position.addScaledVector(
     flightMovement.normalize(),
     flightSpeed * (boosted ? 3 : 1) * deltaSeconds,
   );
+  return true;
+}
+
+function readFlyCameraAvailability(): boolean {
+  return supportsFlyCamera({
+    coarsePointer: coarsePointerMedia.matches,
+    hoverUnavailable: hoverUnavailableMedia.matches,
+  });
+}
+
+function updateFlightAvailability(): void {
+  flyCameraAvailable = readFlyCameraAvailability();
+  if (!flyCameraAvailable) setFlightMode(false);
+  flightButton.hidden = !flyCameraAvailable;
+  flightButton.disabled = !flyCameraAvailable || activeSchematic === null;
 }
 
 function isFlightKey(code: string): boolean {

@@ -2,7 +2,7 @@
 
 ## Current release surface
 
-Version 0.1.0 provides a Vite viewer that can be deployed as a standalone page
+Version 0.2.0 provides a Vite viewer that can be deployed as a standalone page
 and embedded in an iframe. A custom element and npm packages are planned but do
 not exist yet. Consumers should pin a Git commit or release tag while the API is
 alpha.
@@ -17,7 +17,8 @@ schematic            -> one Vintage Story schematic JSON
 ```
 
 See [Asset pipeline](asset-pipeline.md) before deploying the registry or
-textures.
+textures. Existing installations should also follow the staged procedure in
+[Upgrading and rollback](upgrading.md).
 
 ## Build and deploy
 
@@ -44,7 +45,7 @@ An environment example is available at `apps/desktop/.env.example`.
 ```html
 <iframe
   title="Vintage Story schematic preview"
-  src="https://viewer.example.org/?schematic=https%3A%2F%2Fwiki.example.org%2Fschematics%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&grid=off&bounds=off&meta=off"
+  src="https://viewer.example.org/?schematic=https%3A%2F%2Fwiki.example.org%2Fschematics%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&grid=off&bounds=off&meta=off&unresolved=off"
   loading="lazy"
   allow="fullscreen"
   style="width: 100%; aspect-ratio: 16 / 9; border: 0">
@@ -60,6 +61,7 @@ Supported query parameters:
 | `grid` | `on/off`, `true/false`, `1/0`, or `yes/no` |
 | `bounds` | Show or hide the declared schematic boundary |
 | `meta` | Show or hide technical/meta blocks |
+| `unresolved` | Show or hide unresolved colored placeholder blocks; hidden by default |
 
 Remote schematic and registry servers must allow the viewer origin through
 CORS. Texture URLs embedded in the registry must do the same. Prefer HTTPS for
@@ -79,6 +81,7 @@ viewer.setOptions({
   grid: false,
   bounds: false,
   metaBlocks: false,
+  unresolvedBlocks: false,
 });
 
 console.log(viewer.version);
@@ -105,12 +108,13 @@ const gif = await viewer.exportGif({
   includeGrid: false,
   includeBounds: false,
   includeMetaBlocks: false,
+  includeUnresolvedBlocks: false,
 });
 ```
 
-The result is an `image/gif` `Blob`. Defaults hide grid, bounds and meta blocks.
-Framing is based only on visible renderable geometry, so technical placement
-blocks do not shrink the preview.
+The result is an `image/gif` `Blob`. Defaults hide grid, bounds, meta blocks,
+and unresolved placeholders. Framing is based only on visible renderable
+geometry, so technical placement blocks do not shrink the preview.
 
 For a schematic database, generate previews at upload time in a browser worker
 and cache by:
@@ -123,14 +127,20 @@ List pages should use a still or generated animation and instantiate the 3D
 viewer only after user interaction. This substantially reduces WebGL contexts,
 texture downloads, and parsing work.
 
+The interactive viewer renders on visual changes rather than continuously,
+caps its effective pixel count, pauses in background tabs, and targets at most
+60 frames per second. The no-clip fly camera depends on keyboard movement and
+pointer lock, so it is intentionally hidden on touch-only mobile devices; orbit
+controls remain available there.
+
 ## Hosting presets
 
 The wiki and database can use the same viewer release with different URLs:
 
 ```text
-Wiki:     ?grid=off&bounds=off&meta=off
-Database: ?grid=on&bounds=on&meta=off
-Editor:   ?grid=on&bounds=on&meta=on
+Wiki:     ?grid=off&bounds=off&meta=off&unresolved=off
+Database: ?grid=on&bounds=on&meta=off&unresolved=off
+Editor:   ?grid=on&bounds=on&meta=on&unresolved=on
 ```
 
 Do not fork the renderer to change these defaults. Keep the renderer and asset
