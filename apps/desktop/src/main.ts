@@ -24,10 +24,14 @@ import {
 } from "@vs-schematic/renderer-core";
 import {
   VIEWER_VERSION,
+  normalizeViewerPresentationOptions,
+  readViewerPresentationOptions,
   readViewerOptions,
   type GifExportOptions,
+  type ViewerControlId,
   type ViewerEmbedApi,
   type ViewerOptions,
+  type ViewerPresentationOptions,
 } from "./viewerOptions.js";
 import {
   calculateAdaptivePixelRatio,
@@ -38,6 +42,30 @@ import "./style.css";
 
 const MAX_REMOTE_SCHEMATIC_BYTES = 16 * 1024 * 1024;
 const MIN_FRAME_INTERVAL_MS = 1000 / TARGET_MAX_FRAMES_PER_SECOND;
+const startupParameters = new URLSearchParams(window.location.search);
+const fixturePath = import.meta.env.DEV ? startupParameters.get("fixture") : null;
+const remoteSchematicUrl = startupParameters.get("schematic");
+const initialPresentationOptions = readViewerPresentationOptions(
+  window.location.search,
+);
+const initiallyVisibleControls = new Set(initialPresentationOptions.controls);
+const initialToolbarHidden = initialPresentationOptions.controls.length === 0
+  ? " hidden"
+  : "";
+const initialEmptyTitle = initialPresentationOptions.mode === "embed"
+  ? remoteSchematicUrl === null && fixturePath === null
+    ? "Waiting for the host website"
+    : "Loading schematic"
+  : "Drop a Vintage Story schematic here";
+const initialEmptyDescription = initialPresentationOptions.mode === "embed"
+  ? remoteSchematicUrl === null && fixturePath === null
+    ? "This embedded viewer accepts schematics from its host page."
+    : "The website selected this schematic preview."
+  : "Open any local JSON schematic. Game assets remain on this computer.";
+
+function initiallyHidden(control: ViewerControlId): string {
+  return initiallyVisibleControls.has(control) ? "" : " hidden";
+}
 
 declare global {
   interface Window {
@@ -57,26 +85,26 @@ app.innerHTML = [
   '      <span class="brand-mark">VS</span>',
   `      <div><strong>Schematic Viewer</strong><small>v${VIEWER_VERSION}</small></div>`,
   "    </div>",
-  '    <div class="toolbar-actions">',
-  '      <input id="schematic-input" type="file" accept=".json,application/json" hidden />',
-  '      <button id="open-button" class="button button-primary" type="button">Open schematic</button>',
-  '      <button id="grid-button" class="button button-toggle" type="button" aria-pressed="true">Grid: On</button>',
-  '      <button id="bounds-button" class="button button-toggle" type="button" aria-pressed="true">Bounds: On</button>',
-  '      <button id="export-button" class="button" type="button" disabled>Export GIF</button>',
-  '      <button id="meta-button" class="button button-toggle" type="button" aria-pressed="false" disabled>Show meta blocks</button>',
-  '      <button id="unresolved-button" class="button button-toggle" type="button" aria-pressed="false" disabled>Show unresolved</button>',
-  '      <button id="flight-button" class="button button-toggle" type="button" aria-pressed="false" disabled>Fly camera</button>',
-  '      <button id="recenter-button" class="button" type="button" disabled>Recenter</button>',
-  '      <button id="top-button" class="button" type="button" disabled>Top view</button>',
+  `    <div id="toolbar-actions" class="toolbar-actions"${initialToolbarHidden}>`,
+  `      <input id="schematic-input" type="file" accept=".json,application/json" hidden${initialPresentationOptions.mode === "embed" ? " disabled" : ""} />`,
+  `      <button id="open-button" class="button button-primary" type="button"${initiallyHidden("open")}>Open schematic</button>`,
+  `      <button id="grid-button" class="button button-toggle" type="button" aria-pressed="true"${initiallyHidden("grid")}>Grid: On</button>`,
+  `      <button id="bounds-button" class="button button-toggle" type="button" aria-pressed="true"${initiallyHidden("bounds")}>Bounds: On</button>`,
+  `      <button id="export-button" class="button" type="button" disabled${initiallyHidden("export")}>Export GIF</button>`,
+  `      <button id="meta-button" class="button button-toggle" type="button" aria-pressed="false" disabled${initiallyHidden("meta")}>Show meta blocks</button>`,
+  `      <button id="unresolved-button" class="button button-toggle" type="button" aria-pressed="false" disabled${initiallyHidden("unresolved")}>Show unresolved</button>`,
+  `      <button id="flight-button" class="button button-toggle" type="button" aria-pressed="false" disabled${initiallyHidden("flight")}>Fly camera</button>`,
+  `      <button id="recenter-button" class="button" type="button" disabled${initiallyHidden("recenter")}>Recenter</button>`,
+  `      <button id="top-button" class="button" type="button" disabled${initiallyHidden("top")}>Top view</button>`,
   "    </div>",
   "  </header>",
   '  <section class="workspace">',
   '    <div id="viewport" class="viewport" aria-label="3D schematic viewport">',
   '      <div id="empty-state" class="empty-state">',
   '        <div class="empty-icon">◇</div>',
-  "        <h1>Drop a Vintage Story schematic here</h1>",
-  "        <p>Open any local JSON schematic. Game assets remain on this computer.</p>",
-  '        <button id="empty-open-button" class="button button-primary" type="button">Choose schematic</button>',
+  `        <h1 id="empty-title">${initialEmptyTitle}</h1>`,
+  `        <p id="empty-description">${initialEmptyDescription}</p>`,
+  `        <button id="empty-open-button" class="button button-primary" type="button"${initiallyHidden("open")}>Choose schematic</button>`,
   "      </div>",
   '      <div id="drop-overlay" class="drop-overlay">Release to inspect schematic</div>',
   '      <div id="viewport-badge" class="viewport-badge">PLACEHOLDER MODE</div>',
@@ -131,6 +159,7 @@ app.innerHTML = [
 ].join("");
 
 const viewportElement = requireElement<HTMLDivElement>("viewport");
+const toolbarActions = requireElement<HTMLDivElement>("toolbar-actions");
 const inputElement = requireElement<HTMLInputElement>("schematic-input");
 const openButton = requireElement<HTMLButtonElement>("open-button");
 const gridButton = requireElement<HTMLButtonElement>("grid-button");
@@ -143,6 +172,8 @@ const emptyOpenButton = requireElement<HTMLButtonElement>("empty-open-button");
 const recenterButton = requireElement<HTMLButtonElement>("recenter-button");
 const topButton = requireElement<HTMLButtonElement>("top-button");
 const emptyState = requireElement<HTMLDivElement>("empty-state");
+const emptyTitle = requireElement<HTMLElement>("empty-title");
+const emptyDescription = requireElement<HTMLElement>("empty-description");
 const dropOverlay = requireElement<HTMLDivElement>("drop-overlay");
 const fileNameElement = requireElement<HTMLElement>("file-name");
 const fileVersionElement = requireElement<HTMLElement>("file-version");
@@ -155,6 +186,28 @@ const statusMessage = requireElement<HTMLElement>("status-message");
 const renderStats = requireElement<HTMLElement>("render-stats");
 const viewportBadge = requireElement<HTMLElement>("viewport-badge");
 const flightHint = requireElement<HTMLElement>("flight-hint");
+const controlElements: Readonly<Record<ViewerControlId, readonly HTMLElement[]>> = {
+  open: [openButton, emptyOpenButton],
+  grid: [gridButton],
+  bounds: [boundsButton],
+  export: [exportButton],
+  meta: [metaButton],
+  unresolved: [unresolvedButton],
+  flight: [flightButton],
+  recenter: [recenterButton],
+  top: [topButton],
+};
+const toolbarControlElements = [
+  openButton,
+  gridButton,
+  boundsButton,
+  exportButton,
+  metaButton,
+  unresolvedButton,
+  flightButton,
+  recenterButton,
+  topButton,
+] as const;
 
 const scene = new Scene();
 scene.background = new Color(0x151814);
@@ -190,6 +243,7 @@ grid.position.y = -0.002;
 scene.add(grid);
 
 const initialViewerOptions = readViewerOptions(window.location.search);
+let presentationOptions = initialPresentationOptions;
 let activeScene: SchematicScene | null = null;
 let activeBounds: Box3Helper | null = null;
 let activeSchematic: ParsedSchematic | null = null;
@@ -225,6 +279,8 @@ window.vsSchematicViewer = {
   version: VIEWER_VERSION,
   getOptions: getViewerOptions,
   setOptions: applyViewerOptions,
+  getPresentationOptions,
+  setPresentationOptions: applyPresentationOptions,
   loadSchematicJson,
   loadSchematicUrl,
   exportGif: exportActiveSchematicGif,
@@ -234,6 +290,7 @@ updateBoundsControls();
 updateMetaControls();
 updateGifExportControls();
 updateFlightAvailability();
+updatePresentationControls();
 
 const resizeObserver = new ResizeObserver(() => resizeViewport());
 resizeObserver.observe(viewportElement);
@@ -243,8 +300,8 @@ hoverUnavailableMedia.addEventListener("change", updateFlightAvailability);
 resizeViewport();
 requestRender();
 
-openButton.addEventListener("click", () => inputElement.click());
-emptyOpenButton.addEventListener("click", () => inputElement.click());
+openButton.addEventListener("click", openLocalSchematicPicker);
+emptyOpenButton.addEventListener("click", openLocalSchematicPicker);
 gridButton.addEventListener("click", () => {
   applyViewerOptions({ grid: !showGrid });
 });
@@ -267,6 +324,10 @@ flightButton.addEventListener("click", () => {
   }
 });
 inputElement.addEventListener("change", () => {
+  if (!allowsLocalFiles()) {
+    inputElement.value = "";
+    return;
+  }
   const file = inputElement.files?.[0];
   if (file !== undefined) {
     void loadSchematicFile(file);
@@ -351,17 +412,19 @@ document.addEventListener("visibilitychange", () => {
 
 viewportElement.addEventListener("dragenter", (event) => {
   event.preventDefault();
+  if (!allowsLocalFiles()) return;
   dragDepth += 1;
   dropOverlay.classList.add("is-visible");
 });
 viewportElement.addEventListener("dragover", (event) => {
   event.preventDefault();
   if (event.dataTransfer !== null) {
-    event.dataTransfer.dropEffect = "copy";
+    event.dataTransfer.dropEffect = allowsLocalFiles() ? "copy" : "none";
   }
 });
 viewportElement.addEventListener("dragleave", (event) => {
   event.preventDefault();
+  if (!allowsLocalFiles()) return;
   dragDepth = Math.max(0, dragDepth - 1);
   if (dragDepth === 0) {
     dropOverlay.classList.remove("is-visible");
@@ -371,6 +434,7 @@ viewportElement.addEventListener("drop", (event) => {
   event.preventDefault();
   dragDepth = 0;
   dropOverlay.classList.remove("is-visible");
+  if (!allowsLocalFiles()) return;
   const file = event.dataTransfer?.files[0];
   if (file !== undefined) {
     void loadSchematicFile(file);
@@ -378,6 +442,7 @@ viewportElement.addEventListener("drop", (event) => {
 });
 
 async function loadSchematicFile(file: File): Promise<void> {
+  if (!allowsLocalFiles()) return;
   try {
     await loadSchematicJson(await file.text(), file.name);
   } catch (error) {
@@ -387,9 +452,6 @@ async function loadSchematicFile(file: File): Promise<void> {
   }
 }
 
-const startupParameters = new URLSearchParams(window.location.search);
-const fixturePath = import.meta.env.DEV ? startupParameters.get("fixture") : null;
-const remoteSchematicUrl = startupParameters.get("schematic");
 if (fixturePath !== null) {
   void loadDevelopmentFixture(fixturePath);
 } else if (remoteSchematicUrl !== null) {
@@ -404,11 +466,13 @@ async function loadSchematicJson(
   jsonText: string,
   fileName = "schematic.json",
 ): Promise<void> {
+  showEmbeddedLoadingState();
   setStatus(`Parsing ${fileName}…`);
   await displaySchematic(fileName, parseSchematicJson(jsonText));
 }
 
 async function loadSchematicUrl(url: string): Promise<void> {
+  showEmbeddedLoadingState();
   const resolvedUrl = new URL(url, window.location.href);
   if (resolvedUrl.protocol !== "http:" && resolvedUrl.protocol !== "https:") {
     throw new Error("Remote schematic URLs must use HTTP or HTTPS.");
@@ -690,6 +754,77 @@ function applyViewerOptions(options: Partial<ViewerOptions>): ViewerOptions {
   return applied;
 }
 
+function getPresentationOptions(): ViewerPresentationOptions {
+  return {
+    mode: presentationOptions.mode,
+    controls: [...presentationOptions.controls],
+  };
+}
+
+function applyPresentationOptions(
+  options: Partial<ViewerPresentationOptions>,
+): ViewerPresentationOptions {
+  presentationOptions = normalizeViewerPresentationOptions({
+    mode: options.mode ?? presentationOptions.mode,
+    controls: options.controls ?? presentationOptions.controls,
+  });
+  updatePresentationControls();
+  const applied = getPresentationOptions();
+  window.dispatchEvent(
+    new CustomEvent("vsviewerpresentationchange", { detail: applied }),
+  );
+  return applied;
+}
+
+function updatePresentationControls(): void {
+  const visibleControls = new Set(presentationOptions.controls);
+  for (const [control, elements] of Object.entries(controlElements) as [
+    ViewerControlId,
+    readonly HTMLElement[],
+  ][]) {
+    const hidden = !visibleControls.has(control);
+    for (const element of elements) element.hidden = hidden;
+  }
+  toolbarActions.hidden = toolbarControlElements.every((element) => element.hidden);
+  inputElement.disabled = !allowsLocalFiles();
+  if (!allowsLocalFiles()) {
+    dragDepth = 0;
+    dropOverlay.classList.remove("is-visible");
+  }
+  updateEmptyStateCopy();
+}
+
+function allowsLocalFiles(): boolean {
+  return presentationOptions.mode === "standalone";
+}
+
+function openLocalSchematicPicker(): void {
+  if (allowsLocalFiles()) inputElement.click();
+}
+
+function showEmbeddedLoadingState(): void {
+  if (presentationOptions.mode !== "embed" || activeSchematic !== null) return;
+  emptyTitle.textContent = "Loading schematic";
+  emptyDescription.textContent = "The website selected this schematic preview.";
+}
+
+function updateEmptyStateCopy(): void {
+  if (activeSchematic !== null) return;
+  if (presentationOptions.mode === "embed") {
+    const hasStartupSchematic = remoteSchematicUrl !== null || fixturePath !== null;
+    emptyTitle.textContent = hasStartupSchematic
+      ? "Loading schematic"
+      : "Waiting for the host website";
+    emptyDescription.textContent = hasStartupSchematic
+      ? "The website selected this schematic preview."
+      : "This embedded viewer accepts schematics from its host page.";
+    return;
+  }
+  emptyTitle.textContent = "Drop a Vintage Story schematic here";
+  emptyDescription.textContent =
+    "Open any local JSON schematic. Game assets remain on this computer.";
+}
+
 function updateGifExportControls(): void {
   exportButton.disabled = activeScene === null || gifExportRunning;
   exportButton.textContent = gifExportRunning
@@ -875,6 +1010,11 @@ function fitCamera(schematic: ParsedSchematic, topView: boolean): void {
 }
 
 function showError(fileName: string, message: string): void {
+  if (presentationOptions.mode === "embed" && activeSchematic === null) {
+    emptyTitle.textContent = "Could not load schematic";
+    emptyDescription.textContent =
+      "The host website's predefined schematic could not be loaded.";
+  }
   fileNameElement.textContent = fileName;
   fileVersionElement.textContent = "Invalid or unsupported schematic";
   parserReport.className = "report report-error";

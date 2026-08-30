@@ -17,7 +17,7 @@ Before changing anything, record:
 - the location of the previous application bundle and registry for rollback.
 
 Do not overwrite the only working copy. Use immutable directories such as
-`viewer/0.2.0/` and `vs-assets/1.22.5/<registry-hash>/`, then change a small
+`viewer/0.3.0/` and `vs-assets/1.22.5/<registry-hash>/`, then change a small
 channel or configuration pointer after verification.
 
 ## Fetch and verify a renderer release
@@ -26,7 +26,7 @@ On Windows PowerShell or Ubuntu/Bash:
 
 ```text
 git fetch --tags origin
-git checkout v0.2.0
+git checkout v0.3.0
 pnpm install --frozen-lockfile
 pnpm test
 pnpm typecheck
@@ -74,7 +74,8 @@ boundary.
 ## Stage and smoke-test
 
 Point a staging viewer at the new application and registry. Test at least one
-representative schematic for each changed rendering path. For 0.2.0, check:
+representative schematic for each changed rendering path. The baseline checks
+from 0.2.0 remain useful:
 
 - a tall ruined door with its wood and moss textures correctly scaled;
 - a window with an opaque frame and transparent glass;
@@ -129,3 +130,22 @@ An AI model or deployment automation updating a running service should:
 
 Do not infer Vintage Story compatibility from the renderer version. Renderer
 releases and game-asset manifests are intentionally versioned independently.
+
+## 0.2.0 to 0.3.0
+
+Version 0.3.0 changes only the deployable viewer application. Keep the existing
+0.2.0-compatible format-v2 registry and textures; no registry rebuild or
+schematic migration is needed.
+
+Replace the versioned application bundle, then update website iframe URLs to
+use `mode=embed`. Use `controls` as an explicit allowlist when visitors should
+not change fixed display settings. For example:
+
+```text
+?mode=embed&controls=recenter,top&grid=off&bounds=off&meta=off&unresolved=off
+```
+
+Smoke-test that local file buttons never appear during the predefined
+schematic's initial load, file drag/drop is ignored, allowed controls remain
+usable, and omitted controls do not occupy toolbar space. The old standalone
+behavior remains the default for URLs without `mode=embed`.

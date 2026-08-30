@@ -22,7 +22,7 @@ wrappers can be published later if demand justifies them.
 
 ## Consumer API
 
-### Current v0.2.0 bridge
+### Current v0.3.0 bridge
 
 Before the web component is extracted, the viewer accepts a schematic URL,
 asset-registry URL, and stable display options through its URL. This lets wiki
@@ -30,7 +30,7 @@ and database prototypes load a structure and choose different presets without
 changing renderer code:
 
 ```text
-https://viewer.example.org/?schematic=https%3A%2F%2Fwiki.example.org%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&grid=off&bounds=off&meta=off&unresolved=off
+https://viewer.example.org/?schematic=https%3A%2F%2Fwiki.example.org%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&mode=embed&controls=recenter%2Ctop&grid=off&bounds=off&meta=off&unresolved=off
 ```
 
 The accepted boolean values are `on`/`off`, `true`/`false`, `1`/`0`, and
@@ -49,6 +49,24 @@ iframe.contentWindow.vsSchematicViewer.setOptions({
 `vsvieweroptionschange` window event after runtime changes. The URL form remains
 the cross-origin iframe option; the eventual web component will expose the same
 settings as element properties and attributes.
+
+`mode=embed` removes local file selection and drag/drop before first paint.
+`controls` is a comma-separated allowlist containing any of `open`, `grid`,
+`bounds`, `export`, `meta`, `unresolved`, `flight`, `recenter`, and `top`.
+`controls=none` creates a display-only toolbar, while a setting such as
+`meta=off` remains applied even when its button is not in the allowlist.
+Same-origin hosts can update this presentation policy at runtime:
+
+```js
+iframe.contentWindow.vsSchematicViewer.setPresentationOptions({
+  mode: "embed",
+  controls: ["recenter", "top"],
+});
+```
+
+The viewer emits `vsviewerpresentationchange` after runtime changes. This is UI
+policy rather than a security boundary; same-origin host scripts retain access
+to the documented loading and settings API.
 
 Same-origin hosts can load or replace the schematic without reloading the
 iframe:
@@ -110,7 +128,7 @@ The simple embed should require only a module and a schematic:
 
 ```html
 <script type="module"
-  src="https://cdn.example.org/@vs-schematic/viewer-element/0.2.0/index.js"></script>
+  src="https://cdn.example.org/@vs-schematic/viewer-element/0.3.0/index.js"></script>
 
 <vs-schematic-viewer
   schematic="/schematics/watchtower.json"
@@ -154,7 +172,7 @@ size, and schema validation before loading.
 Renderer releases and game-asset compatibility are different things and must
 not share one version number.
 
-- Renderer packages use semantic versions, for example `0.2.0`.
+- Renderer packages use semantic versions, for example `0.3.0`.
 - Asset manifests use the exact game version, for example `1.22.7`.
 - Each manifest records its registry format, compiler version/commit, source
   game version, creation time, and content hash.

@@ -25,6 +25,10 @@ button {
   font: inherit;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 .app-shell {
   display: grid;
   grid-template-rows: 68px minmax(0, 1fr) 28px;

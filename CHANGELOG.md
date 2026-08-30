@@ -2,6 +2,26 @@
 
 All notable changes will be documented in this file.
 
+## 0.3.0 - 2026-08-30
+
+Website embedding controls:
+
+- added `mode=embed`, which removes local file selection and drag/drop before
+  the viewer's first paint while still accepting a predefined schematic URL or
+  same-origin host API load;
+- added the `controls` URL allowlist so hosts can independently expose or hide
+  open, grid, bounds, GIF export, meta, unresolved, fly, recenter, and top-view
+  actions;
+- added same-origin `getPresentationOptions()` and
+  `setPresentationOptions()` methods for runtime presentation changes;
+- added embed-specific loading, waiting, and failure copy that never invites
+  visitors to select a local file; and
+- documented fixed wiki/database presets and the distinction between UI policy
+  and a security boundary.
+
+This release changes only the viewer application. It requires no asset-registry,
+texture, or schematic migration.
+
 ## 0.2.0 - 2026-08-27
 
 Rendering, embedding, and performance update:

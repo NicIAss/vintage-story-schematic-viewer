@@ -2,7 +2,7 @@
 
 ## Current release surface
 
-Version 0.2.0 provides a Vite viewer that can be deployed as a standalone page
+Version 0.3.0 provides a Vite viewer that can be deployed as a standalone page
 and embedded in an iframe. A custom element and npm packages are planned but do
 not exist yet. Consumers should pin a Git commit or release tag while the API is
 alpha.
@@ -45,7 +45,7 @@ An environment example is available at `apps/desktop/.env.example`.
 ```html
 <iframe
   title="Vintage Story schematic preview"
-  src="https://viewer.example.org/?schematic=https%3A%2F%2Fwiki.example.org%2Fschematics%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&grid=off&bounds=off&meta=off&unresolved=off"
+  src="https://viewer.example.org/?schematic=https%3A%2F%2Fwiki.example.org%2Fschematics%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&mode=embed&controls=recenter%2Ctop&grid=off&bounds=off&meta=off&unresolved=off"
   loading="lazy"
   allow="fullscreen"
   style="width: 100%; aspect-ratio: 16 / 9; border: 0">
@@ -62,6 +62,24 @@ Supported query parameters:
 | `bounds` | Show or hide the declared schematic boundary |
 | `meta` | Show or hide technical/meta blocks |
 | `unresolved` | Show or hide unresolved colored placeholder blocks; hidden by default |
+| `mode` | `standalone` (default) or `embed`; embed mode disables and removes local file selection and drag/drop |
+| `controls` | Comma-separated allowlist of visible toolbar actions, `all`, or `none` |
+
+Supported control names are `open`, `grid`, `bounds`, `export`, `meta`,
+`unresolved`, `flight`, `recenter`, and `top`. The default standalone URL shows
+all controls. Embed mode always removes `open`, even if it appears in the
+allowlist; without an explicit `controls` value it shows the other controls.
+
+For a locked preview with only camera-reset actions, use:
+
+```text
+?mode=embed&controls=recenter,top&grid=off&bounds=off&meta=off&unresolved=off
+```
+
+For a display-only preview, use `mode=embed&controls=none`. Display options and
+control visibility are deliberately separate: `meta=off` fixes the initial
+meta-block state, while omitting `meta` from `controls` prevents a visitor from
+changing it through the viewer UI.
 
 Remote schematic and registry servers must allow the viewer origin through
 CORS. Texture URLs embedded in the registry must do the same. Prefer HTTPS for
@@ -84,8 +102,14 @@ viewer.setOptions({
   unresolvedBlocks: false,
 });
 
+viewer.setPresentationOptions({
+  mode: "embed",
+  controls: ["recenter", "top"],
+});
+
 console.log(viewer.version);
 console.log(viewer.getOptions());
+console.log(viewer.getPresentationOptions());
 ```
 
 Raw JSON can be supplied without another viewer-side request:
@@ -138,9 +162,9 @@ controls remain available there.
 The wiki and database can use the same viewer release with different URLs:
 
 ```text
-Wiki:     ?grid=off&bounds=off&meta=off&unresolved=off
-Database: ?grid=on&bounds=on&meta=off&unresolved=off
-Editor:   ?grid=on&bounds=on&meta=on&unresolved=on
+Wiki:     ?mode=embed&controls=recenter,top&grid=off&bounds=off&meta=off&unresolved=off
+Database: ?mode=embed&controls=export,recenter,top&grid=off&bounds=off&meta=off&unresolved=off
+Editor:   ?mode=standalone&controls=all&grid=on&bounds=on&meta=on&unresolved=on
 ```
 
 Do not fork the renderer to change these defaults. Keep the renderer and asset
@@ -158,6 +182,10 @@ reverted consistently.
   deliberately.
 - Do not accept an arbitrary user-controlled registry URL on a privileged
   origin unless that is part of the site's threat model.
+- Embed mode is a presentation policy, not an authorization boundary. It
+  removes local-file interactions from the viewer UI, but a same-origin script
+  can still call the documented host API. Use normal origin, CSP, and framing
+  controls for security isolation.
 
 ## Planned package API
 

@@ -6,7 +6,7 @@ An unofficial, local-first renderer for Vintage Story JSON schematics. It
 parses the game's sparse schematic format, resolves vanilla block and item
 assets, renders block-entity geometry, and exports rotating GIF previews.
 
-The project is currently **v0.2.0 alpha**. The renderer works as a Vite web app
+The project is currently **v0.3.0 alpha**. The renderer works as a Vite web app
 and reusable TypeScript core. A standards-based web component and published npm
 packages are planned; the supported website integration today is an iframe or
 the same-origin JavaScript bridge.
@@ -101,7 +101,7 @@ parameters:
 
 ```html
 <iframe
-  src="https://viewer.example.org/?schematic=https%3A%2F%2Fexample.org%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&grid=off&bounds=off&meta=off&unresolved=off"
+  src="https://viewer.example.org/?schematic=https%3A%2F%2Fexample.org%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&mode=embed&controls=recenter%2Ctop&grid=off&bounds=off&meta=off&unresolved=off"
   loading="lazy"
   allow="fullscreen">
 </iframe>
