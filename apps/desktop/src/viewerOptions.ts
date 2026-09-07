@@ -1,4 +1,4 @@
-export const VIEWER_VERSION = "0.3.0";
+export const VIEWER_VERSION = "0.4.0";
 
 export interface ViewerOptions {
   readonly grid: boolean;
@@ -17,6 +17,7 @@ export const VIEWER_CONTROL_IDS = [
   "flight",
   "recenter",
   "top",
+  "info",
 ] as const;
 
 export type ViewerControlId = (typeof VIEWER_CONTROL_IDS)[number];
@@ -25,6 +26,7 @@ export type ViewerMode = "standalone" | "embed";
 export interface ViewerPresentationOptions {
   readonly mode: ViewerMode;
   readonly controls: readonly ViewerControlId[];
+  readonly inspector: boolean;
 }
 
 export interface GifExportOptions {
@@ -60,6 +62,7 @@ export const DEFAULT_VIEWER_OPTIONS: ViewerOptions = {
 export const DEFAULT_VIEWER_PRESENTATION_OPTIONS: ViewerPresentationOptions = {
   mode: "standalone",
   controls: VIEWER_CONTROL_IDS,
+  inspector: false,
 };
 
 /**
@@ -97,6 +100,10 @@ export function readViewerPresentationOptions(
   return normalizeViewerPresentationOptions({
     mode,
     controls: requestedControls ?? VIEWER_CONTROL_IDS,
+    inspector: readBoolean(
+      parameters.get("inspector"),
+      DEFAULT_VIEWER_PRESENTATION_OPTIONS.inspector,
+    ),
   });
 }
 
@@ -110,6 +117,7 @@ export function normalizeViewerPresentationOptions(
       (control) => requestedControls.has(control)
         && !(options.mode === "embed" && control === "open"),
     ),
+    inspector: options.inspector === true,
   };
 }
 

@@ -56,21 +56,6 @@ button {
   min-width: 0;
 }
 
-.brand-mark {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  border: 1px solid #a88144;
-  border-radius: 8px;
-  color: #f4d59c;
-  background: linear-gradient(145deg, #5c4729, #2f291e);
-  font-family: Georgia, serif;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-}
-
 .brand strong,
 .brand small {
   display: block;
@@ -142,9 +127,14 @@ button {
 }
 
 .workspace {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
   min-height: 0;
+}
+
+.workspace.is-inspector-hidden {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .viewport {
@@ -170,21 +160,6 @@ button {
 
 .viewport canvas.is-flight-dragging {
   cursor: grabbing;
-}
-
-.viewport-badge {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-  padding: 5px 8px;
-  border: 1px solid rgb(211 168 92 / 46%);
-  border-radius: 4px;
-  color: #dcb66f;
-  background: rgb(20 22 18 / 78%);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  pointer-events: none;
 }
 
 .flight-hint {
@@ -493,6 +468,12 @@ button {
   }
 
   .inspector {
-    display: none;
+    position: absolute;
+    z-index: 20;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(320px, 100%);
+    box-shadow: -12px 0 36px rgb(0 0 0 / 34%);
   }
 }

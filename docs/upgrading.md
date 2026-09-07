@@ -17,7 +17,7 @@ Before changing anything, record:
 - the location of the previous application bundle and registry for rollback.
 
 Do not overwrite the only working copy. Use immutable directories such as
-`viewer/0.3.0/` and `vs-assets/1.22.5/<registry-hash>/`, then change a small
+`viewer/0.4.0/` and `vs-assets/1.22.5/<registry-hash>/`, then change a small
 channel or configuration pointer after verification.
 
 ## Fetch and verify a renderer release
@@ -26,7 +26,7 @@ On Windows PowerShell or Ubuntu/Bash:
 
 ```text
 git fetch --tags origin
-git checkout v0.3.0
+git checkout v0.4.0
 pnpm install --frozen-lockfile
 pnpm test
 pnpm typecheck
@@ -149,3 +149,15 @@ Smoke-test that local file buttons never appear during the predefined
 schematic's initial load, file drag/drop is ignored, allowed controls remain
 usable, and omitted controls do not occupy toolbar space. The old standalone
 behavior remains the default for URLs without `mode=embed`.
+
+## 0.3.0 to 0.4.0
+
+Version 0.4.0 changes only the deployable viewer application. Keep the existing
+format-v2 registry and texture hierarchy; no registry rebuild or schematic
+migration is needed.
+
+The side information panel now starts hidden. Add `info` to the `controls`
+allowlist when visitors should be able to open it, and use `inspector=on` only
+for pages that should start with the panel expanded. On narrow screens the
+expanded panel overlays the viewport. Smoke-test both toggle states and any
+embed that intentionally omits the `info` action.

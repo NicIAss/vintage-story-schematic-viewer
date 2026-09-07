@@ -30,7 +30,9 @@ describe("viewer options", () => {
       "flight",
       "recenter",
       "top",
+      "info",
     ]);
+    expect(presentation.inspector).toBe(false);
   });
 
   it("locks local files in embed mode and supports an allowlist of controls", () => {
@@ -41,6 +43,7 @@ describe("viewer options", () => {
     ).toEqual({
       mode: "embed",
       controls: ["grid", "recenter", "top"],
+      inspector: false,
     });
   });
 
@@ -48,6 +51,13 @@ describe("viewer options", () => {
     expect(readViewerPresentationOptions("?mode=embed&controls=none")).toEqual({
       mode: "embed",
       controls: [],
+      inspector: false,
     });
+  });
+
+  it("lets hosts choose the initial inspector state", () => {
+    expect(readViewerPresentationOptions("?inspector=on").inspector).toBe(true);
+    expect(readViewerPresentationOptions("?mode=embed&inspector=off").inspector)
+      .toBe(false);
   });
 });

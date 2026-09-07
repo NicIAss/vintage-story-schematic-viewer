@@ -22,7 +22,7 @@ wrappers can be published later if demand justifies them.
 
 ## Consumer API
 
-### Current v0.3.0 bridge
+### Current v0.4.0 bridge
 
 Before the web component is extracted, the viewer accepts a schematic URL,
 asset-registry URL, and stable display options through its URL. This lets wiki
@@ -52,15 +52,19 @@ settings as element properties and attributes.
 
 `mode=embed` removes local file selection and drag/drop before first paint.
 `controls` is a comma-separated allowlist containing any of `open`, `grid`,
-`bounds`, `export`, `meta`, `unresolved`, `flight`, `recenter`, and `top`.
+`bounds`, `export`, `meta`, `unresolved`, `flight`, `recenter`, `top`, and
+`info`.
 `controls=none` creates a display-only toolbar, while a setting such as
 `meta=off` remains applied even when its button is not in the allowlist.
+The side information panel starts hidden. The `info` action toggles it, and
+`inspector=on|off` selects its initial state.
 Same-origin hosts can update this presentation policy at runtime:
 
 ```js
 iframe.contentWindow.vsSchematicViewer.setPresentationOptions({
   mode: "embed",
-  controls: ["recenter", "top"],
+  controls: ["recenter", "top", "info"],
+  inspector: false,
 });
 ```
 
@@ -128,7 +132,7 @@ The simple embed should require only a module and a schematic:
 
 ```html
 <script type="module"
-  src="https://cdn.example.org/@vs-schematic/viewer-element/0.3.0/index.js"></script>
+  src="https://cdn.example.org/@vs-schematic/viewer-element/0.4.0/index.js"></script>
 
 <vs-schematic-viewer
   schematic="/schematics/watchtower.json"
@@ -172,7 +176,7 @@ size, and schema validation before loading.
 Renderer releases and game-asset compatibility are different things and must
 not share one version number.
 
-- Renderer packages use semantic versions, for example `0.3.0`.
+- Renderer packages use semantic versions, for example `0.4.0`.
 - Asset manifests use the exact game version, for example `1.22.7`.
 - Each manifest records its registry format, compiler version/commit, source
   game version, creation time, and content hash.

@@ -6,7 +6,7 @@ An unofficial, local-first renderer for Vintage Story JSON schematics. It
 parses the game's sparse schematic format, resolves vanilla block and item
 assets, renders block-entity geometry, and exports rotating GIF previews.
 
-The project is currently **v0.3.0 alpha**. The renderer works as a Vite web app
+The project is currently **v0.4.0 alpha**. The renderer works as a Vite web app
 and reusable TypeScript core. A standards-based web component and published npm
 packages are planned; the supported website integration today is an iframe or
 the same-origin JavaScript bridge.
@@ -19,7 +19,8 @@ the same-origin JavaScript bridge.
 - chests, crates, shelves, ground storage, piles, support beams, liquids,
   overlays, fruit trees, soil and foliage tinting;
 - orbit and no-clip fly cameras, with fly mode omitted on touch-only devices;
-- optional grid, schematic bounds, and technical/meta blocks;
+- optional grid, schematic bounds, technical/meta blocks, and a collapsible
+  information panel;
 - auto-framed rotating GIF export; and
 - unresolved blocks hidden by default, with diagnostics and an optional viewer
   toggle.
@@ -101,7 +102,7 @@ parameters:
 
 ```html
 <iframe
-  src="https://viewer.example.org/?schematic=https%3A%2F%2Fexample.org%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&mode=embed&controls=recenter%2Ctop&grid=off&bounds=off&meta=off&unresolved=off"
+  src="https://viewer.example.org/?schematic=https%3A%2F%2Fexample.org%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&mode=embed&controls=recenter%2Ctop%2Cinfo&grid=off&bounds=off&meta=off&unresolved=off&inspector=off"
   loading="lazy"
   allow="fullscreen">
 </iframe>

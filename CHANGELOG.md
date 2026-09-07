@@ -2,6 +2,23 @@
 
 All notable changes will be documented in this file.
 
+## 0.4.0 - 2026-09-07
+
+Compact viewer interface update:
+
+- removed the non-interactive asset-mode badge from the viewport;
+- removed the decorative `VS` mark while retaining the viewer name and version;
+- made the side information panel hidden by default so the viewport receives
+  the full available width;
+- added an accessible `Show info` / `Hide info` toolbar control;
+- added `inspector=on|off`, the `info` control allowlist entry, and the
+  `inspector` same-origin presentation option for website-specific layouts; and
+- made the information panel an overlay on narrow screens instead of reducing
+  the viewport width.
+
+This release changes only the viewer application. Existing format-v2
+registries, textures, and schematic JSON files require no migration.
+
 ## 0.3.0 - 2026-08-30
 
 Website embedding controls:

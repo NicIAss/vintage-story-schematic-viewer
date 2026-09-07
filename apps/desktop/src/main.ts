@@ -52,6 +52,7 @@ const initiallyVisibleControls = new Set(initialPresentationOptions.controls);
 const initialToolbarHidden = initialPresentationOptions.controls.length === 0
   ? " hidden"
   : "";
+const initialInspectorHidden = initialPresentationOptions.inspector ? "" : " hidden";
 const initialEmptyTitle = initialPresentationOptions.mode === "embed"
   ? remoteSchematicUrl === null && fixturePath === null
     ? "Waiting for the host website"
@@ -82,7 +83,6 @@ app.innerHTML = [
   '<main class="app-shell">',
   '  <header class="toolbar">',
   '    <div class="brand">',
-  '      <span class="brand-mark">VS</span>',
   `      <div><strong>Schematic Viewer</strong><small>v${VIEWER_VERSION}</small></div>`,
   "    </div>",
   `    <div id="toolbar-actions" class="toolbar-actions"${initialToolbarHidden}>`,
@@ -96,9 +96,10 @@ app.innerHTML = [
   `      <button id="flight-button" class="button button-toggle" type="button" aria-pressed="false" disabled${initiallyHidden("flight")}>Fly camera</button>`,
   `      <button id="recenter-button" class="button" type="button" disabled${initiallyHidden("recenter")}>Recenter</button>`,
   `      <button id="top-button" class="button" type="button" disabled${initiallyHidden("top")}>Top view</button>`,
+  `      <button id="info-button" class="button button-toggle" type="button" aria-controls="inspector" aria-expanded="false"${initiallyHidden("info")}>Show info</button>`,
   "    </div>",
   "  </header>",
-  '  <section class="workspace">',
+  `  <section id="workspace" class="workspace${initialPresentationOptions.inspector ? "" : " is-inspector-hidden"}">`,
   '    <div id="viewport" class="viewport" aria-label="3D schematic viewport">',
   '      <div id="empty-state" class="empty-state">',
   '        <div class="empty-icon">◇</div>',
@@ -107,10 +108,9 @@ app.innerHTML = [
   `        <button id="empty-open-button" class="button button-primary" type="button"${initiallyHidden("open")}>Choose schematic</button>`,
   "      </div>",
   '      <div id="drop-overlay" class="drop-overlay">Release to inspect schematic</div>',
-  '      <div id="viewport-badge" class="viewport-badge">PLACEHOLDER MODE</div>',
   '      <div id="flight-hint" class="flight-hint">Click the viewport · WASD move · Space/Shift vertical · Ctrl boost · Esc frees cursor</div>',
   "    </div>",
-  '    <aside class="inspector">',
+  `    <aside id="inspector" class="inspector"${initialInspectorHidden}>`,
   '      <section class="inspector-section file-section">',
   '        <span class="eyebrow">Loaded schematic</span>',
   '        <h2 id="file-name">Nothing loaded</h2>',
@@ -159,6 +159,7 @@ app.innerHTML = [
 ].join("");
 
 const viewportElement = requireElement<HTMLDivElement>("viewport");
+const workspaceElement = requireElement<HTMLElement>("workspace");
 const toolbarActions = requireElement<HTMLDivElement>("toolbar-actions");
 const inputElement = requireElement<HTMLInputElement>("schematic-input");
 const openButton = requireElement<HTMLButtonElement>("open-button");
@@ -171,6 +172,8 @@ const flightButton = requireElement<HTMLButtonElement>("flight-button");
 const emptyOpenButton = requireElement<HTMLButtonElement>("empty-open-button");
 const recenterButton = requireElement<HTMLButtonElement>("recenter-button");
 const topButton = requireElement<HTMLButtonElement>("top-button");
+const infoButton = requireElement<HTMLButtonElement>("info-button");
+const inspectorElement = requireElement<HTMLElement>("inspector");
 const emptyState = requireElement<HTMLDivElement>("empty-state");
 const emptyTitle = requireElement<HTMLElement>("empty-title");
 const emptyDescription = requireElement<HTMLElement>("empty-description");
@@ -184,7 +187,6 @@ const assetStats = requireElement<HTMLElement>("asset-stats");
 const unsupportedList = requireElement<HTMLElement>("unsupported-list");
 const statusMessage = requireElement<HTMLElement>("status-message");
 const renderStats = requireElement<HTMLElement>("render-stats");
-const viewportBadge = requireElement<HTMLElement>("viewport-badge");
 const flightHint = requireElement<HTMLElement>("flight-hint");
 const controlElements: Readonly<Record<ViewerControlId, readonly HTMLElement[]>> = {
   open: [openButton, emptyOpenButton],
@@ -196,6 +198,7 @@ const controlElements: Readonly<Record<ViewerControlId, readonly HTMLElement[]>>
   flight: [flightButton],
   recenter: [recenterButton],
   top: [topButton],
+  info: [infoButton],
 };
 const toolbarControlElements = [
   openButton,
@@ -207,6 +210,7 @@ const toolbarControlElements = [
   flightButton,
   recenterButton,
   topButton,
+  infoButton,
 ] as const;
 
 const scene = new Scene();
@@ -344,6 +348,9 @@ topButton.addEventListener("click", () => {
   if (activeSchematic !== null) {
     fitCamera(activeSchematic, true);
   }
+});
+infoButton.addEventListener("click", () => {
+  applyPresentationOptions({ inspector: !presentationOptions.inspector });
 });
 
 renderer.domElement.tabIndex = 0;
@@ -572,14 +579,6 @@ async function displaySchematic(
   updateBoundsControls();
   updateGifExportControls();
 
-  if (activeScene.stats.texturedBlockCount === 0) {
-    viewportBadge.textContent = "PLACEHOLDER MODE";
-  } else if (activeScene.stats.placeholderBlockCount === 0) {
-    viewportBadge.textContent = "TEXTURED ASSET MODE";
-  } else {
-    viewportBadge.textContent = "MIXED TEXTURE MODE";
-  }
-
   if (schematic.warnings.length === 0) {
     parserReport.className = "report report-ok";
     parserReport.textContent =
@@ -758,6 +757,7 @@ function getPresentationOptions(): ViewerPresentationOptions {
   return {
     mode: presentationOptions.mode,
     controls: [...presentationOptions.controls],
+    inspector: presentationOptions.inspector,
   };
 }
 
@@ -767,6 +767,7 @@ function applyPresentationOptions(
   presentationOptions = normalizeViewerPresentationOptions({
     mode: options.mode ?? presentationOptions.mode,
     controls: options.controls ?? presentationOptions.controls,
+    inspector: options.inspector ?? presentationOptions.inspector,
   });
   updatePresentationControls();
   const applied = getPresentationOptions();
@@ -787,11 +788,20 @@ function updatePresentationControls(): void {
   }
   toolbarActions.hidden = toolbarControlElements.every((element) => element.hidden);
   inputElement.disabled = !allowsLocalFiles();
+  inspectorElement.hidden = !presentationOptions.inspector;
+  workspaceElement.classList.toggle(
+    "is-inspector-hidden",
+    !presentationOptions.inspector,
+  );
+  infoButton.textContent = presentationOptions.inspector ? "Hide info" : "Show info";
+  infoButton.setAttribute("aria-pressed", String(presentationOptions.inspector));
+  infoButton.setAttribute("aria-expanded", String(presentationOptions.inspector));
   if (!allowsLocalFiles()) {
     dragDepth = 0;
     dropOverlay.classList.remove("is-visible");
   }
   updateEmptyStateCopy();
+  resizeViewport();
 }
 
 function allowsLocalFiles(): boolean {

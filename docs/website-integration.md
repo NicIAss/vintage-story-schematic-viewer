@@ -2,7 +2,7 @@
 
 ## Current release surface
 
-Version 0.3.0 provides a Vite viewer that can be deployed as a standalone page
+Version 0.4.0 provides a Vite viewer that can be deployed as a standalone page
 and embedded in an iframe. A custom element and npm packages are planned but do
 not exist yet. Consumers should pin a Git commit or release tag while the API is
 alpha.
@@ -45,7 +45,7 @@ An environment example is available at `apps/desktop/.env.example`.
 ```html
 <iframe
   title="Vintage Story schematic preview"
-  src="https://viewer.example.org/?schematic=https%3A%2F%2Fwiki.example.org%2Fschematics%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&mode=embed&controls=recenter%2Ctop&grid=off&bounds=off&meta=off&unresolved=off"
+  src="https://viewer.example.org/?schematic=https%3A%2F%2Fwiki.example.org%2Fschematics%2Fwatchtower.json&registry=https%3A%2F%2Fcdn.example.org%2Fvs-assets%2F1.22.5%2Fasset-registry.json&mode=embed&controls=recenter%2Ctop%2Cinfo&grid=off&bounds=off&meta=off&unresolved=off&inspector=off"
   loading="lazy"
   allow="fullscreen"
   style="width: 100%; aspect-ratio: 16 / 9; border: 0">
@@ -64,11 +64,14 @@ Supported query parameters:
 | `unresolved` | Show or hide unresolved colored placeholder blocks; hidden by default |
 | `mode` | `standalone` (default) or `embed`; embed mode disables and removes local file selection and drag/drop |
 | `controls` | Comma-separated allowlist of visible toolbar actions, `all`, or `none` |
+| `inspector` | Initial side-information panel state; `on` or `off` (off by default) |
 
 Supported control names are `open`, `grid`, `bounds`, `export`, `meta`,
-`unresolved`, `flight`, `recenter`, and `top`. The default standalone URL shows
-all controls. Embed mode always removes `open`, even if it appears in the
-allowlist; without an explicit `controls` value it shows the other controls.
+`unresolved`, `flight`, `recenter`, `top`, and `info`. The default standalone
+URL shows all controls. Embed mode always removes `open`, even if it appears in
+the allowlist; without an explicit `controls` value it shows the other
+controls. The inspector starts hidden to maximize viewport space. `info` lets a
+visitor toggle it, while `inspector=on` opens it initially.
 
 For a locked preview with only camera-reset actions, use:
 
@@ -104,7 +107,8 @@ viewer.setOptions({
 
 viewer.setPresentationOptions({
   mode: "embed",
-  controls: ["recenter", "top"],
+  controls: ["recenter", "top", "info"],
+  inspector: false,
 });
 
 console.log(viewer.version);
