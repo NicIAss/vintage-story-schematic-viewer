@@ -158,6 +158,12 @@ The 0.4.3 compiler adds saved tapestry designs to the compatible format-v2
 registry. Rebuild the registry when upgrading to 0.4.3; no PNG conversion or
 schematic migration is required.
 
+The 0.4.4 compiler corrects named JSON-shape texture fallback ordering. Rebuild
+the compatible format-v2 registry when upgrading so shaped blocks such as the
+wooden barrel retain their shape-provided wood, bottom, and metal materials
+instead of inheriting one unrelated block texture. The PNG hierarchy and
+schematic files do not need conversion.
+
 ## Licensing boundary
 
 No Vintage Story assets or official source are stored in this repository. The

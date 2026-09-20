@@ -13,18 +13,23 @@ describe("unresolved block visibility", () => {
       (child): child is InstancedMesh => child instanceof InstancedMesh,
     );
     const ordinary = meshes.find((mesh) => mesh.userData.blockCode === "game:unresolved");
-    const meta = meshes.find((mesh) => mesh.userData.blockCode === "game:meta-unresolved");
+    let meta = meshes.find((mesh) => mesh.userData.blockCode === "game:meta-unresolved");
 
     expect(scene.stats.placeholderBlockCount).toBe(2);
     expect(scene.stats.metaPlaceholderBlockCount).toBe(1);
     expect(ordinary?.visible).toBe(false);
-    expect(meta?.visible).toBe(false);
+    expect(meta).toBeUndefined();
 
     scene.setPlaceholderBlocksVisible(true);
     expect(ordinary?.visible).toBe(true);
-    expect(meta?.visible).toBe(false);
+    expect(meta).toBeUndefined();
 
     scene.setMetaBlocksVisible(true);
+    meta = scene.object.children.find(
+      (child): child is InstancedMesh =>
+        child instanceof InstancedMesh
+        && child.userData.blockCode === "game:meta-unresolved",
+    );
     expect(meta?.visible).toBe(true);
 
     scene.setPlaceholderBlocksVisible(false);

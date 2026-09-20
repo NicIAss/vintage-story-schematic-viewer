@@ -1577,13 +1577,16 @@ function shapeTextureSource(
       value = firstDefinedTexture(blockTextures, FACE_TEXTURE_KEYS[alias as CubeFace]);
       value ??= firstDefinedTexture(blockTextures, ["all", "sides", "horizontals", "verticals"]);
     }
-    if (value === undefined && Object.keys(blockTextures).length === 1) {
-      value = Object.values(blockTextures)[0];
-    }
+    // A shape's own named textures are defaults for those exact aliases. A
+    // block with one unrelated override (for example the barrel's `lid`)
+    // must not replace every material declared by the shape.
     value ??= getCaseInsensitive(shapeTextures, alias);
     if (value === undefined && CUBE_FACES.includes(alias as CubeFace)) {
       value = firstDefinedTexture(shapeTextures, FACE_TEXTURE_KEYS[alias as CubeFace]);
       value ??= firstDefinedTexture(shapeTextures, ["all", "sides", "horizontals", "verticals"]);
+    }
+    if (value === undefined && Object.keys(blockTextures).length === 1) {
+      value = Object.values(blockTextures)[0];
     }
     if (value === undefined && Object.keys(shapeTextures).length === 1) {
       value = Object.values(shapeTextures)[0];

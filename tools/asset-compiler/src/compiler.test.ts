@@ -70,6 +70,43 @@ describe("latest registry resolution rules", () => {
     }
   });
 
+  it("keeps named shape textures when a block has one unrelated override", async () => {
+    const assetRoot = await mkdtemp(path.join(tmpdir(), "vs-asset-compiler-"));
+    try {
+      const blockTypeRoot = path.join(assetRoot, "survival", "blocktypes");
+      const shapeRoot = path.join(assetRoot, "survival", "shapes", "block");
+      const textureRoot = path.join(assetRoot, "survival", "textures", "block");
+      await mkdir(blockTypeRoot, { recursive: true });
+      await mkdir(shapeRoot, { recursive: true });
+      await mkdir(textureRoot, { recursive: true });
+      await writeFile(
+        path.join(blockTypeRoot, "barrel.json"),
+        `{ code: "barrel", shape: { base: "block/barrel" }, textures: { lid: { base: "block/lid" } } }`,
+        "utf8",
+      );
+      await writeFile(
+        path.join(shapeRoot, "barrel.json"),
+        `{ textures: { wood: "block/wood", metal: "block/metal" }, elements: [{ from: [0, 0, 0], to: [16, 16, 16], faces: { north: { texture: "#wood" }, up: { texture: "#metal" } } }] }`,
+        "utf8",
+      );
+      for (const texture of ["lid", "wood", "metal"]) {
+        await writeFile(path.join(textureRoot, `${texture}.png`), "fixture", "utf8");
+      }
+
+      const registry = await compileAssetRegistry(assetRoot);
+      const barrel = registry.blocks["game:barrel"];
+
+      expect(barrel?.shape?.textures.wood?.base.assetPath).toBe(
+        "survival/textures/block/wood.png",
+      );
+      expect(barrel?.shape?.textures.metal?.base.assetPath).toBe(
+        "survival/textures/block/metal.png",
+      );
+    } finally {
+      await rm(assetRoot, { recursive: true, force: true });
+    }
+  });
+
   it("compiles tapestry block-entity types into matching texture variants", async () => {
     const assetRoot = await mkdtemp(path.join(tmpdir(), "vs-asset-compiler-"));
     try {

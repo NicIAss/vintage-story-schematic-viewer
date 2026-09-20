@@ -61,6 +61,7 @@ import {
   type ResolvedFruitTreePart,
 } from "./fruitTrees";
 import { createSurfaceDecorGeometry } from "./surfaceDecorGeometry";
+import { ChunkedGeometryBatcher } from "./chunkedGeometry";
 
 export interface SchematicSceneStats {
   readonly texturedBlockCount: number;
@@ -137,6 +138,14 @@ interface SurfaceDecorHostGeometry {
 }
 
 const CUBE_FACES = ["east", "west", "up", "down", "south", "north"] as const;
+const CUBE_FACE_OFFSETS: Readonly<Record<CubeFace, readonly [number, number, number]>> = {
+  east: [1, 0, 0],
+  west: [-1, 0, 0],
+  up: [0, 1, 0],
+  down: [0, -1, 0],
+  south: [0, 0, 1],
+  north: [0, 0, -1],
+};
 
 // Climate colormaps have four pixels of atlas padding around an inner 256 × 256
 // rain/temperature map. Vintage Story encodes 20 °C as 170
@@ -303,6 +312,8 @@ export async function createSchematicScene(
   const faceTextureCache = new Map<string, Texture>();
   const materialCache = new Map<string, MeshBasicMaterial>();
   const metaMeshes: InstancedMesh[] = [];
+  const placeholderMeshes: InstancedMesh[] = [];
+  const deferredMetaMeshBuilders: Array<() => InstancedMesh> = [];
   const embeddedMetaMaterials = new Set<MeshBasicMaterial>();
   const matrix = new Matrix4();
   let texturedBlockCount = 0;
@@ -324,6 +335,7 @@ export async function createSchematicScene(
   let unresolvedDecorCount = 0;
   let metaBlockCount = 0;
   let metaCodeCount = 0;
+  let deferredMetaPlaceholderBlockCount = 0;
   const placeholderBreakdown = new Map<string, PlaceholderBreakdownEntry>();
   const surfaceDecorHostGeometryCache = new Map<string, BufferGeometry | null>();
   const surfaceDecorGeometryCache = new Map<string, BufferGeometry | null>();
@@ -487,7 +499,7 @@ export async function createSchematicScene(
               materialCache,
               materials,
               derivedTextures,
-              null,
+              resolvePreviewColorTint(definition, loadedTextures, registry),
               properties.textureTile,
             ),
             matrices: [],
@@ -583,6 +595,78 @@ export async function createSchematicScene(
     geometryProgressTotal,
   );
 
+  const opaqueCubeCodes = new Set<string>();
+  const opaqueCubePositions = new Set<string>();
+  if (registry !== null) {
+    for (const [code, codeBlocks] of blocksByCode) {
+      const definition = registry.blocks[code];
+      if (
+        definition !== undefined
+        && isBatchableOpaqueCubeDefinition(definition, loadedTextures)
+      ) {
+        opaqueCubeCodes.add(code);
+        for (const block of codeBlocks) {
+          opaqueCubePositions.add(blockPositionKey(block.position.x, block.position.y, block.position.z));
+        }
+      }
+    }
+  }
+
+  const opaqueCubeBatcher = new ChunkedGeometryBatcher();
+  if (registry !== null) {
+    for (const code of opaqueCubeCodes) {
+      const definition = registry.blocks[code];
+      const codeBlocks = blocksByCode.get(code);
+      if (definition === undefined || codeBlocks === undefined) continue;
+      const cubeMaterial = createCubeMaterials(
+        definition,
+        loadedTextures,
+        faceTextureCache,
+        materialCache,
+        materials,
+        derivedTextures,
+        resolvePreviewColorTint(definition, loadedTextures, registry),
+      );
+      const faceMaterials = Array.isArray(cubeMaterial)
+        ? cubeMaterial
+        : CUBE_FACES.map(() => cubeMaterial);
+      for (const block of codeBlocks) {
+        const translation = {
+          x: block.position.x - schematic.size.x / 2 + 0.5,
+          y: block.position.y + 0.5,
+          z: block.position.z - schematic.size.z / 2 + 0.5,
+        };
+        for (let faceIndex = 0; faceIndex < CUBE_FACES.length; faceIndex += 1) {
+          const face = CUBE_FACES[faceIndex];
+          const faceMaterial = faceMaterials[faceIndex];
+          if (face === undefined || faceMaterial === undefined) continue;
+          const offset = CUBE_FACE_OFFSETS[face];
+          if (opaqueCubePositions.has(blockPositionKey(
+            block.position.x + offset[0],
+            block.position.y + offset[1],
+            block.position.z + offset[2],
+          ))) {
+            continue;
+          }
+          opaqueCubeBatcher.appendGeometryGroup(
+            exactCubeGeometry,
+            faceIndex,
+            faceMaterial,
+            block.position,
+            translation,
+          );
+        }
+      }
+    }
+  }
+  opaqueCubeBatcher.flush(object, {
+    name: "Opaque cube chunk",
+    renderMode: "opaque-cube-chunk",
+    onGeometry: (geometry) => customGeometries.add(geometry),
+  });
+
+  const microblockBatcher = new ChunkedGeometryBatcher();
+
   for (const [code, codeBlocks] of blocksByCode) {
     if (geometryProgressCompleted % 8 === 0) {
       await yieldForSceneProgress(options);
@@ -596,6 +680,11 @@ export async function createSchematicScene(
     );
     const definition = registry?.blocks[code];
     const isMeta = definition?.isMeta === true || code.startsWith("game:meta-");
+    if (opaqueCubeCodes.has(code)) {
+      texturedCodeCount += 1;
+      texturedBlockCount += codeBlocks.length;
+      continue;
+    }
     if (
       definition !== undefined
       && isFruitTreeDefinition(definition.className)
@@ -771,18 +860,25 @@ export async function createSchematicScene(
             embeddedMetaMaterials.add(material);
           }
         });
-        customGeometries.add(built.geometry);
-        const mesh = createPositionedInstancedMesh(
-          built.geometry,
-          microblockMaterials,
-          group.blocks,
-          schematic,
-          matrix,
-        );
-        mesh.name = `Chiseled microblock ${code}`;
-        mesh.userData.blockCode = code;
-        mesh.userData.renderMode = "microblock";
-        object.add(mesh);
+        for (const block of group.blocks) {
+          const translation = {
+            x: block.position.x - schematic.size.x / 2 + 0.5,
+            y: block.position.y + 0.5,
+            z: block.position.z - schematic.size.z / 2 + 0.5,
+          };
+          for (let groupIndex = 0; groupIndex < built.geometry.groups.length; groupIndex += 1) {
+            const material = microblockMaterials[groupIndex];
+            if (material === undefined) continue;
+            microblockBatcher.appendGeometryGroup(
+              built.geometry,
+              groupIndex,
+              material,
+              block.position,
+              translation,
+            );
+          }
+        }
+        built.geometry.dispose();
         renderedMicroblocksForCode += group.blocks.length;
       }
       if (fallbackBlocks.length > 0) {
@@ -1417,34 +1513,28 @@ export async function createSchematicScene(
       material = createPlaceholderMaterial(code, isMeta, materials);
     }
     const textured = texturedCube || shaped;
-    const mesh = new InstancedMesh(geometry, material, codeBlocks.length);
-    mesh.name = `${texturedCube ? "Textured cube" : shaped ? "JSON shape" : "Placeholder"} ${code}`;
-    mesh.userData.blockCode = code;
-    mesh.userData.renderMode = texturedCube ? "textured-cube" : shaped ? "json-shape" : "placeholder";
-    mesh.userData.isMeta = isMeta;
-    mesh.instanceMatrix.setUsage(StaticDrawUsage);
-
-    for (let index = 0; index < codeBlocks.length; index += 1) {
-      const block = codeBlocks[index];
-      if (block === undefined) {
-        continue;
-      }
-      matrix.makeTranslation(
-        block.position.x - schematic.size.x / 2 + 0.5,
-        block.position.y + 0.5,
-        block.position.z - schematic.size.z / 2 + 0.5,
+    const createMesh = (): InstancedMesh => {
+      const mesh = createPositionedInstancedMesh(
+        geometry,
+        material,
+        codeBlocks,
+        schematic,
+        new Matrix4(),
       );
-      mesh.setMatrixAt(index, matrix);
-    }
-    mesh.instanceMatrix.needsUpdate = true;
+      mesh.name = `${texturedCube ? "Textured cube" : shaped ? "JSON shape" : "Placeholder"} ${code}`;
+      mesh.userData.blockCode = code;
+      mesh.userData.renderMode = texturedCube ? "textured-cube" : shaped ? "json-shape" : "placeholder";
+      mesh.userData.isMeta = isMeta;
+      return mesh;
+    };
     if (isMeta) {
-      mesh.visible = false;
-      mesh.renderOrder = 10;
-      metaMeshes.push(mesh);
+      deferredMetaMeshBuilders.push(createMesh);
+      if (!textured) deferredMetaPlaceholderBlockCount += codeBlocks.length;
       metaBlockCount += codeBlocks.length;
       metaCodeCount += 1;
+    } else {
+      object.add(createMesh());
     }
-    object.add(mesh);
 
     if (textured) {
       texturedCodeCount += 1;
@@ -1465,7 +1555,14 @@ export async function createSchematicScene(
     }
   }
 
-  const placeholderMeshes: InstancedMesh[] = [];
+  microblockBatcher.flush(object, {
+    name: "Chiseled microblock chunk",
+    renderMode: "microblock-chunk",
+    onGeometry: (geometry) => customGeometries.add(geometry),
+  });
+  opaqueCubeCodes.clear();
+  opaqueCubePositions.clear();
+
   object.traverse((child) => {
     if (
       child instanceof InstancedMesh
@@ -1474,12 +1571,26 @@ export async function createSchematicScene(
       placeholderMeshes.push(child);
     }
   });
-  const metaPlaceholderBlockCount = placeholderMeshes.reduce(
+  const metaPlaceholderBlockCount = deferredMetaPlaceholderBlockCount + placeholderMeshes.reduce(
     (count, mesh) => count + (mesh.userData.isMeta === true ? mesh.count : 0),
     0,
   );
   let metaBlocksVisible = false;
   let placeholderBlocksVisible = false;
+  const buildDeferredMetaMeshes = (): void => {
+    while (deferredMetaMeshBuilders.length > 0) {
+      const build = deferredMetaMeshBuilders.shift();
+      if (build === undefined) continue;
+      const mesh = build();
+      mesh.visible = false;
+      mesh.renderOrder = 10;
+      metaMeshes.push(mesh);
+      if (mesh.userData.renderMode === "placeholder") {
+        placeholderMeshes.push(mesh);
+      }
+      object.add(mesh);
+    }
+  };
   const updateSpecialMeshVisibility = (): void => {
     for (const mesh of new Set([...metaMeshes, ...placeholderMeshes])) {
       mesh.visible = (mesh.userData.isMeta !== true || metaBlocksVisible)
@@ -1520,6 +1631,7 @@ export async function createSchematicScene(
     },
     setMetaBlocksVisible(visible: boolean): void {
       metaBlocksVisible = visible;
+      if (visible) buildDeferredMetaMeshes();
       updateSpecialMeshVisibility();
       for (const material of embeddedMetaMaterials) {
         setEmbeddedMetaMaterialVisible(material, visible);
@@ -1767,6 +1879,28 @@ function hasEveryCubeTexture(
     }
   }
   return true;
+}
+
+function isBatchableOpaqueCubeDefinition(
+  definition: CompiledBlockDefinition,
+  loadedTextures: ReadonlyMap<string, Texture>,
+): boolean {
+  return !definition.isMeta
+    && !isTransparentDefinition(definition)
+    && definition.drawType?.toLowerCase() !== "liquid"
+    && !isFruitTreeDefinition(definition.className)
+    && !isChiseledDefinition(definition)
+    && definition.className !== "BlockSupportBeam"
+    && definition.className !== "BlockGroundStorage"
+    && definition.className !== "BlockFirewoodPile"
+    && definition.className !== "BlockCheese"
+    && (definition.pile === null || definition.pile === undefined)
+    && (definition.entityShapes === null || definition.entityShapes === undefined)
+    && hasEveryCubeTexture(definition, loadedTextures);
+}
+
+function blockPositionKey(x: number, y: number, z: number): string {
+  return `${x},${y},${z}`;
 }
 
 function hasEveryShapeTexture(

@@ -2,6 +2,34 @@
 
 All notable changes will be documented in this file.
 
+## 0.4.4 - 2026-09-20
+
+Large-schematic performance and texture correctness:
+
+- divided opaque cube and chiseled/microblock geometry into 32-block spatial
+  chunks so Three.js can discard chunks outside the camera view;
+- batched visible geometry by material inside each chunk and removed cube
+  faces buried against another opaque full cube;
+- reduced the 580,800-entry Better Ruins village test from 58,915 draw calls
+  and 4,527,060 triangles to 4,015 draw calls and 1,724,556 triangles in its
+  full overview;
+- deferred hidden technical/meta instance buffers until the user first enables
+  meta blocks, avoiding their initial CPU and GPU allocation;
+- applied climate and seasonal color maps to surface decors, restoring the
+  intended green appearance of pale, partially transparent tinted-moss
+  overlays;
+- corrected shape texture fallback ordering so a single unrelated block
+  override no longer replaces every named texture in a JSON shape, fixing the
+  barrel's wood, bottom, and black-bronze hoop materials; and
+- added regression coverage for chunk grouping, deferred meta placeholders,
+  and named shape texture defaults.
+
+Registry format remains v2. Deployments should rebuild and redeploy the asset
+registry with the 0.4.4 compiler to receive the shaped-block texture fix. The
+performance and surface-decor tint fixes require the new viewer bundle.
+Existing PNG trees, schematic JSON files, iframe settings, and same-origin APIs
+require no migration.
+
 ## 0.4.3 - 2026-09-20
 
 Tapestry block-entity rendering:

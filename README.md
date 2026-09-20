@@ -6,7 +6,7 @@ An unofficial, local-first renderer for Vintage Story JSON schematics. It
 parses the game's sparse schematic format, resolves vanilla block and item
 assets, renders block-entity geometry, and exports rotating GIF previews.
 
-The project is currently **v0.4.3 alpha**. The renderer works as a Vite web app
+The project is currently **v0.4.4 alpha**. The renderer works as a Vite web app
 and reusable TypeScript core. A standards-based web component and published npm
 packages are planned; the supported website integration today is an iframe or
 the same-origin JavaScript bridge.
@@ -19,6 +19,8 @@ the same-origin JavaScript bridge.
 - chests, crates, shelves, ground storage, piles, support beams, liquids,
   block-entity-selected tapestries, shape-conforming surface overlays, fruit
   trees, soil and foliage tinting;
+- chunked solid-cube and microblock rendering with buried-face removal and
+  camera-frustum culling for large schematics;
 - orbit and no-clip fly cameras, with fly mode omitted on touch-only devices;
 - accessible phase and percentage feedback while schematics are loading;
 - optional grid, schematic bounds, technical/meta blocks, and a collapsible

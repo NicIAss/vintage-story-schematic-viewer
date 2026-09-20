@@ -17,7 +17,7 @@ Before changing anything, record:
 - the location of the previous application bundle and registry for rollback.
 
 Do not overwrite the only working copy. Use immutable directories such as
-`viewer/0.4.3/` and `vs-assets/1.22.5/<registry-hash>/`, then change a small
+`viewer/0.4.4/` and `vs-assets/1.22.5/<registry-hash>/`, then change a small
 channel or configuration pointer after verification.
 
 ## Fetch and verify a renderer release
@@ -26,7 +26,7 @@ On Windows PowerShell or Ubuntu/Bash:
 
 ```text
 git fetch --tags origin
-git checkout v0.4.3
+git checkout v0.4.4
 pnpm install --frozen-lockfile
 pnpm test
 pnpm typecheck
@@ -201,3 +201,21 @@ including a multi-block design such as `forlorn1`/`forlorn2`. Confirm that the
 sections form the intended image, directional placement remains correct, and
 ordinary block resolution counts are unchanged. Schematic JSON files, iframe
 query parameters, and same-origin APIs require no migration.
+
+## 0.4.3 to 0.4.4
+
+Version 0.4.4 changes both the viewer renderer and asset compiler while keeping
+registry format v2. Rebuild and redeploy the registry with the 0.4.4 compiler
+so named shape textures take precedence over unrelated single-texture block
+fallbacks. This fixes wooden barrels and may correct other shaped blocks with
+the same definition pattern. Reuse the existing PNG hierarchy; no texture or
+schematic conversion is required.
+
+Deploy the 0.4.4 viewer bundle to receive chunked frustum culling, buried cube
+face removal, chiseled/microblock material batching, deferred hidden meta
+buffers, and climate/season tinting for surface overlays. Stage a large build,
+a chiseled-heavy build, tinted moss on stone, a wooden barrel, and a meta-block
+toggle. Compare draw calls and triangles before and after, then exercise the
+existing iframe preset and one GIF export. Query parameters and same-origin
+APIs are unchanged, so rollback consists of restoring the previous viewer and
+its matching registry URL.
