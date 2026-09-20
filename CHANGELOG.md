@@ -4,7 +4,7 @@ All notable changes will be documented in this file.
 
 ## 0.4.2 - 2026-09-20
 
-Schematic loading feedback:
+Schematic loading feedback and camera controls:
 
 - added a centered, accessible loading panel with a percentage bar and current
   loading phase for standalone, embedded, local-file, URL, and host-API loads;
@@ -14,7 +14,12 @@ Schematic loading feedback:
 - yielded periodically during geometry construction so large schematics keep
   repainting and visibly advance the progress bar; and
 - added clean completion fading, error cleanup, and stale-load protection when
-  a newer schematic is selected before an older load finishes.
+  a newer schematic is selected before an older load finishes;
+- shortened the orbit camera's damping tail while retaining smooth rotational
+  momentum; and
+- restored a build-aware orbit pivot after leaving fly mode, so returning to
+  orbit mode rotates around the viewed schematic instead of behaving like a
+  fixed-distance first-person camera.
 
 This is a viewer and renderer-runtime update. Existing format-v2 registries,
 texture trees, embed settings, and schematic JSON files require no migration or

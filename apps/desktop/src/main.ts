@@ -38,10 +38,12 @@ import {
   supportsFlyCamera,
   TARGET_MAX_FRAMES_PER_SECOND,
 } from "./performancePolicy.js";
+import { calculateOrbitTargetAfterFlight } from "./cameraControls.js";
 import "./style.css";
 
 const MAX_REMOTE_SCHEMATIC_BYTES = 16 * 1024 * 1024;
 const MIN_FRAME_INTERVAL_MS = 1000 / TARGET_MAX_FRAMES_PER_SECOND;
+const ORBIT_DAMPING_FACTOR = 0.12;
 const startupParameters = new URLSearchParams(window.location.search);
 const fixturePath = import.meta.env.DEV ? startupParameters.get("fixture") : null;
 const remoteSchematicUrl = startupParameters.get("schematic");
@@ -242,7 +244,7 @@ viewportElement.prepend(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.dampingFactor = 0.08;
+controls.dampingFactor = ORBIT_DAMPING_FACTOR;
 controls.screenSpacePanning = true;
 controls.target.set(0, 3, 0);
 controls.update();
@@ -278,6 +280,7 @@ let gifExportRunning = false;
 let gifExportProgress = 0;
 let flightMode = false;
 let flightSpeed = 8;
+let previousOrbitDistance = camera.position.distanceTo(controls.target);
 let flightLookDragging = false;
 let flightPointerId: number | null = null;
 let flightPointerX = 0;
@@ -1286,14 +1289,20 @@ function setFlightMode(enabled: boolean): void {
   controls.enabled = !enabled;
   renderer.domElement.classList.toggle("is-flight-look", enabled);
   if (enabled) {
+    previousOrbitDistance = Math.max(1, camera.position.distanceTo(controls.target));
     flightEuler.setFromQuaternion(camera.quaternion, "YXZ");
     lastFrameTime = performance.now();
   } else {
     if (document.pointerLockElement === renderer.domElement) {
       document.exitPointerLock();
     }
-    camera.getWorldDirection(flightForward);
-    controls.target.copy(camera.position).addScaledVector(flightForward, 10);
+    camera.getWorldDirection(flightForward).normalize();
+    calculateOrbitTargetAfterFlight({
+      cameraPosition: camera.position,
+      viewDirection: flightForward,
+      contentBounds: activeBounds?.box ?? null,
+      previousOrbitDistance,
+    }, controls.target);
     controls.update();
   }
   updateFlightControls();
