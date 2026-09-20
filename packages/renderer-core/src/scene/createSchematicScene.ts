@@ -60,6 +60,7 @@ import {
   resolveFruitTrees,
   type ResolvedFruitTreePart,
 } from "./fruitTrees";
+import { createSurfaceDecorGeometry } from "./surfaceDecorGeometry";
 
 export interface SchematicSceneStats {
   readonly texturedBlockCount: number;
@@ -115,7 +116,12 @@ interface DecorRenderGroup {
   readonly material: MeshBasicMaterial | MeshBasicMaterial[];
   readonly matrices: Matrix4[];
   readonly code: string;
-  readonly renderMode: "decor-surface" | "decor-json-shape";
+  readonly renderMode: "decor-surface" | "decor-surface-conforming" | "decor-json-shape";
+}
+
+interface SurfaceDecorHostGeometry {
+  readonly geometry: BufferGeometry;
+  readonly signature: string;
 }
 
 const CUBE_FACES = ["east", "west", "up", "down", "south", "north"] as const;
@@ -143,6 +149,9 @@ export async function createSchematicScene(
     && registry?.blocks[block.code]?.className !== "BlockFruitPressTop",
   );
   const blocksByCode = groupBlocksByCode(renderedBlocks);
+  const blocksByPosition = new Map(
+    renderedBlocks.map((block) => [block.packedPosition, block] as const),
+  );
   const resolvedMicroblocks = resolveMicroblocks(schematic, registry);
   const resolvedEntityShapes = resolveEntityShapes(schematic, registry);
   const resolvedFruitTrees = resolveFruitTrees(schematic, registry);
@@ -293,17 +302,18 @@ export async function createSchematicScene(
   let metaBlockCount = 0;
   let metaCodeCount = 0;
   const placeholderBreakdown = new Map<string, PlaceholderBreakdownEntry>();
+  const surfaceDecorHostGeometryCache = new Map<string, BufferGeometry | null>();
+  const surfaceDecorGeometryCache = new Map<string, BufferGeometry | null>();
 
   // Support beams are a block-entity behavior and may be hosted by chisels or
   // other blocks. Render those behavior meshes in addition to the host model;
   // standalone BlockSupportBeam hosts are handled in the main loop below.
   if (registry !== null) {
-    const hostBlocks = new Map(renderedBlocks.map((block) => [block.packedPosition, block] as const));
     const renderGroups = new Map<string, SupportBeamRenderGroup>();
     const successfulHostPositions = new Set<number>();
     const successfulHostCodes = new Set<string>();
     for (const [packedPosition, beams] of resolvedSupportBeams) {
-      const hostBlock = hostBlocks.get(packedPosition);
+      const hostBlock = blocksByPosition.get(packedPosition);
       if (
         hostBlock === undefined
         || registry.blocks[hostBlock.code]?.className === "BlockSupportBeam"
@@ -381,9 +391,10 @@ export async function createSchematicScene(
     supportBeamCodeCount += successfulHostCodes.size;
   }
 
-  // Decors are separate, face-attached blocks in a schematic. Surface-layer
-  // decors use a lightweight plane, while dimensional decors reuse their JSON
-  // shape and are oriented from the shape's native upward-facing attachment.
+  // Decors are separate, face-attached blocks in a schematic. The game builds
+  // surface decals from the host block's tessellated model, so use that same
+  // geometry wherever it can be resolved. The legacy face plane remains a
+  // fallback for special dynamic hosts that do not expose one model mesh.
   if (registry !== null) {
     const renderGroups = new Map<string, DecorRenderGroup>();
     const renderedCodes = new Set<string>();
@@ -397,11 +408,42 @@ export async function createSchematicScene(
 
       const surfaceTexture = properties.surfaceTexture;
       if (surfaceTexture !== null && hasFaceTexture(surfaceTexture, loadedTextures)) {
-        const signature = `surface:${decor.code}`;
+        const hostBlock = blocksByPosition.get(decor.packedPosition);
+        const hostGeometry = hostBlock === undefined || decor.subPosition !== 0
+          ? null
+          : resolveSurfaceDecorHostGeometry(
+              hostBlock,
+              registry,
+              resolvedEntityShapes,
+              resolvedMicroblocks,
+              exactCubeGeometry,
+              surfaceDecorHostGeometryCache,
+              customGeometries,
+            );
+        const angle = decorRotationRadians(decor, false);
+        const conformingSignature = hostGeometry === null
+          ? null
+          : `${hostGeometry.signature}:face=${decor.faceIndex}:rotation=${angle}`;
+        let conformingGeometry = conformingSignature === null
+          ? null
+          : surfaceDecorGeometryCache.get(conformingSignature);
+        if (conformingSignature !== null && conformingGeometry === undefined) {
+          conformingGeometry = createSurfaceDecorGeometry(
+            (hostGeometry as SurfaceDecorHostGeometry).geometry,
+            decor.faceIndex,
+            angle,
+          );
+          surfaceDecorGeometryCache.set(conformingSignature, conformingGeometry);
+          if (conformingGeometry !== null) customGeometries.add(conformingGeometry);
+        }
+
+        const signature = conformingGeometry === null
+          ? `surface:${decor.code}`
+          : `surface-conforming:${decor.code}:${conformingSignature}`;
         let group = renderGroups.get(signature);
         if (group === undefined) {
           group = {
-            geometry: decorSurfaceGeometry,
+            geometry: conformingGeometry ?? decorSurfaceGeometry,
             material: materialForFace(
               surfaceTexture,
               true,
@@ -416,11 +458,17 @@ export async function createSchematicScene(
             ),
             matrices: [],
             code: decor.code,
-            renderMode: "decor-surface",
+            renderMode: conformingGeometry === null
+              ? "decor-surface"
+              : "decor-surface-conforming",
           };
           renderGroups.set(signature, group);
         }
-        group.matrices.push(createDecorMatrix(decor, schematic, "surface", properties));
+        group.matrices.push(
+          conformingGeometry === null
+            ? createDecorMatrix(decor, schematic, "surface", properties)
+            : createDecorCenterMatrix(decor, schematic),
+        );
         decorCount += 1;
         renderedCodes.add(decor.code);
         continue;
@@ -1450,17 +1498,103 @@ export async function createSchematicScene(
   };
 }
 
+function resolveSurfaceDecorHostGeometry(
+  block: SchematicBlock,
+  registry: AssetRegistry,
+  resolvedEntityShapes: ReadonlyMap<number, ResolvedEntityShape>,
+  resolvedMicroblocks: ReadonlyMap<number, ResolvedMicroblock>,
+  exactCubeGeometry: BufferGeometry,
+  cache: Map<string, BufferGeometry | null>,
+  customGeometries: Set<BufferGeometry>,
+): SurfaceDecorHostGeometry | null {
+  const entityShape = resolvedEntityShapes.get(block.packedPosition);
+  if (entityShape !== undefined) {
+    const signature = `entity:${block.code}:${entityShape.signature}`;
+    return resolveCachedSurfaceDecorHostGeometry(
+      signature,
+      cache,
+      customGeometries,
+      () => {
+        const shape = registry.shapes[entityShape.reference.key];
+        return shape === undefined
+          ? null
+          : createJsonShapeGeometry(shape, entityShape.reference)?.geometry ?? null;
+      },
+    );
+  }
+
+  const microblock = resolvedMicroblocks.get(block.packedPosition);
+  if (microblock !== undefined) {
+    const signature = `microblock:${block.code}:${microblock.signature}`;
+    return resolveCachedSurfaceDecorHostGeometry(
+      signature,
+      cache,
+      customGeometries,
+      () => createMicroblockGeometry(microblock.geometryData)?.geometry ?? null,
+    );
+  }
+
+  const definition = registry.blocks[block.code];
+  if (definition === undefined) return null;
+  if (
+    definition.className === "BlockSupportBeam"
+    || definition.className === "BlockGroundStorage"
+    || definition.className === "BlockFirewoodPile"
+    || isFruitTreeDefinition(definition.className)
+  ) {
+    return null;
+  }
+  if (definition.cubeTextures !== null) {
+    return { geometry: exactCubeGeometry, signature: "cube" };
+  }
+  if (definition.shape === null) return null;
+  const signature = `shape:${block.code}`;
+  return resolveCachedSurfaceDecorHostGeometry(
+    signature,
+    cache,
+    customGeometries,
+    () => {
+      const shape = registry.shapes[definition.shape?.key ?? ""];
+      return shape === undefined || definition.shape === null
+        ? null
+        : createJsonShapeGeometry(shape, definition.shape)?.geometry ?? null;
+    },
+  );
+}
+
+function resolveCachedSurfaceDecorHostGeometry(
+  signature: string,
+  cache: Map<string, BufferGeometry | null>,
+  customGeometries: Set<BufferGeometry>,
+  create: () => BufferGeometry | null,
+): SurfaceDecorHostGeometry | null {
+  let geometry = cache.get(signature);
+  if (geometry === undefined) {
+    geometry = create();
+    cache.set(signature, geometry);
+    if (geometry !== null) customGeometries.add(geometry);
+  }
+  return geometry === null ? null : { geometry, signature };
+}
+
+function createDecorCenterMatrix(
+  decor: SchematicDecor,
+  schematic: ParsedSchematic,
+): Matrix4 {
+  return new Matrix4().makeTranslation(
+    decor.position.x - schematic.size.x / 2 + 0.5,
+    decor.position.y + 0.5,
+    decor.position.z - schematic.size.z / 2 + 0.5,
+  );
+}
+
 function createDecorMatrix(
   decor: SchematicDecor,
   schematic: ParsedSchematic,
   mode: "surface" | "shape",
   properties: CompiledDecorProperties,
 ): Matrix4 {
-  const center = new Matrix4().makeTranslation(
-    decor.position.x - schematic.size.x / 2 + 0.5,
-    decor.position.y + 0.5,
-    decor.position.z - schematic.size.z / 2 + 0.5,
-  );
+  const center = createDecorCenterMatrix(decor, schematic);
   // Surface layers are authored against one exact block face. Their saved
   // decor rotation is authoritative; synthesizing a block-level random Y
   // rotation here makes damaged-stone and moss planes visibly leave the grid.

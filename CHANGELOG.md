@@ -2,6 +2,23 @@
 
 All notable changes will be documented in this file.
 
+## 0.4.1 - 2026-09-20
+
+Surface-decor geometry correction:
+
+- changed texture-only decors such as dust, grime, gravel, moss, and damaged
+  stone to reuse the resolved host block model instead of a full-cell plane;
+- limited each generated decal mesh to triangles facing its saved attachment
+  side and retained the host model's UV layout, rotations, offsets, and shape;
+- applied the same path to block-entity-selected models such as clutter and
+  rotated wagon wheels, as well as regular JSON shapes and partial cuboids;
+- retained the existing face-plane fallback for unsupported dynamic hosts and
+  voxel sub-position decors; and
+- added geometry regression tests for partial-block sizing and face selection.
+
+This is a renderer-only patch. Existing format-v2 registries, texture trees,
+embed settings, and schematic JSON files require no migration or rebuild.
+
 ## 0.4.0 - 2026-09-07
 
 Compact viewer interface update:

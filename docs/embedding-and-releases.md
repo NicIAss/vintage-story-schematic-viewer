@@ -22,7 +22,7 @@ wrappers can be published later if demand justifies them.
 
 ## Consumer API
 
-### Current v0.4.0 bridge
+### Current v0.4.1 bridge
 
 Before the web component is extracted, the viewer accepts a schematic URL,
 asset-registry URL, and stable display options through its URL. This lets wiki
@@ -132,7 +132,7 @@ The simple embed should require only a module and a schematic:
 
 ```html
 <script type="module"
-  src="https://cdn.example.org/@vs-schematic/viewer-element/0.4.0/index.js"></script>
+  src="https://cdn.example.org/@vs-schematic/viewer-element/0.4.1/index.js"></script>
 
 <vs-schematic-viewer
   schematic="/schematics/watchtower.json"
@@ -176,7 +176,7 @@ size, and schema validation before loading.
 Renderer releases and game-asset compatibility are different things and must
 not share one version number.
 
-- Renderer packages use semantic versions, for example `0.4.0`.
+- Renderer packages use semantic versions, for example `0.4.1`.
 - Asset manifests use the exact game version, for example `1.22.7`.
 - Each manifest records its registry format, compiler version/commit, source
   game version, creation time, and content hash.

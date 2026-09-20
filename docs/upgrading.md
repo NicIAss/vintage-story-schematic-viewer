@@ -17,7 +17,7 @@ Before changing anything, record:
 - the location of the previous application bundle and registry for rollback.
 
 Do not overwrite the only working copy. Use immutable directories such as
-`viewer/0.4.0/` and `vs-assets/1.22.5/<registry-hash>/`, then change a small
+`viewer/0.4.1/` and `vs-assets/1.22.5/<registry-hash>/`, then change a small
 channel or configuration pointer after verification.
 
 ## Fetch and verify a renderer release
@@ -26,7 +26,7 @@ On Windows PowerShell or Ubuntu/Bash:
 
 ```text
 git fetch --tags origin
-git checkout v0.4.0
+git checkout v0.4.1
 pnpm install --frozen-lockfile
 pnpm test
 pnpm typecheck
@@ -161,3 +161,16 @@ allowlist when visitors should be able to open it, and use `inspector=on` only
 for pages that should start with the panel expanded. On narrow screens the
 expanded panel overlays the viewport. Smoke-test both toggle states and any
 embed that intentionally omits the `info` action.
+
+## 0.4.0 to 0.4.1
+
+Version 0.4.1 changes only the renderer bundle. Keep the existing format-v2
+registry and texture hierarchy; no registry rebuild or schematic migration is
+needed.
+
+Surface decors now follow the resolved host geometry rather than occupying a
+full block-cell face. Stage at least one schematic containing dust or moss on
+partial JSON shapes and one containing rotated clutter, such as a wagon wheel.
+Confirm that the overlay follows the visible surface and no longer floats at
+the nominal one-block outline. Existing iframe controls and same-origin APIs
+are unchanged.
