@@ -2,6 +2,24 @@
 
 All notable changes will be documented in this file.
 
+## 0.4.3 - 2026-09-20
+
+Tapestry block-entity rendering:
+
+- compiled all vanilla tapestry designs into block-entity-selected shape
+  variants instead of reusing the shape file's `ambush1` fallback;
+- resolved each placed tapestry's saved `type`, including multi-block sections
+  such as `forlorn1`/`forlorn2`, schematic fragments, and lore tapestries;
+- retained each directional block variant's model rotation while switching its
+  painting texture; and
+- added an asset-compiler regression test covering design selection, texture
+  paths, and orientation.
+
+This remains registry format v2, but deployments must rebuild and redeploy the
+asset registry to include the new tapestry variants. Existing texture trees
+already contain the required PNGs, and schematic JSON files, iframe settings,
+and same-origin APIs require no migration.
+
 ## 0.4.2 - 2026-09-20
 
 Schematic loading feedback and camera controls:

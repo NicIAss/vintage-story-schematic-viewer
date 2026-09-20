@@ -125,8 +125,8 @@ The generated `asset-registry.json` contains:
 - cube face textures, overlays and rotations;
 - compiled JSON shape elements, UVs, transforms, texture bindings, logical
   texture dimensions, and element render passes;
-- block-entity-selected shapes, fruit-tree resources, and ground-storage
-  layouts;
+- block-entity-selected shapes and textures, including tapestry designs,
+  fruit-tree resources, and ground-storage layouts;
 - support-beam, decor, pile and tint metadata; and
 - compiler statistics, diagnostics and compatibility metadata.
 
@@ -153,6 +153,10 @@ format-v2 registry can load, but it cannot provide the associated tall-door UV,
 window transparency, or dynamic fruit-tree fixes. Rebuild the registry when
 upgrading to 0.2.0. See [Upgrading and rollback](upgrading.md) for the complete
 staged website procedure.
+
+The 0.4.3 compiler adds saved tapestry designs to the compatible format-v2
+registry. Rebuild the registry when upgrading to 0.4.3; no PNG conversion or
+schematic migration is required.
 
 ## Licensing boundary
 

@@ -70,6 +70,48 @@ describe("latest registry resolution rules", () => {
     }
   });
 
+  it("compiles tapestry block-entity types into matching texture variants", async () => {
+    const assetRoot = await mkdtemp(path.join(tmpdir(), "vs-asset-compiler-"));
+    try {
+      const blockTypeRoot = path.join(assetRoot, "survival", "blocktypes");
+      const shapeRoot = path.join(assetRoot, "survival", "shapes", "block", "cloth");
+      const textureRoot = path.join(assetRoot, "survival", "textures", "block", "cloth");
+      const tapestryTextureRoot = path.join(textureRoot, "tapestry");
+      await mkdir(blockTypeRoot, { recursive: true });
+      await mkdir(shapeRoot, { recursive: true });
+      await mkdir(tapestryTextureRoot, { recursive: true });
+      await writeFile(
+        path.join(blockTypeRoot, "tapestry.json"),
+        `{ code: "tapestry", class: "BlockTapestry", attributes: { tapestryGroups: [["ambush1"], ["forlorn1", "forlorn2"]] }, shape: { base: "block/cloth/tapestry", rotateY: 270 } }`,
+        "utf8",
+      );
+      await writeFile(
+        path.join(shapeRoot, "tapestry.json"),
+        `{ textures: { painting: "block/cloth/tapestry/ambush1", ropedcloth: "block/cloth/ropedcloth" }, elements: [{ from: [0, 0, 0], to: [16, 16, 0.5], faces: { north: { texture: "#ropedcloth" }, south: { texture: "#painting" } } }] }`,
+        "utf8",
+      );
+      await writeFile(path.join(textureRoot, "ropedcloth.png"), "fixture", "utf8");
+      for (const type of ["ambush1", "forlorn1", "forlorn2"]) {
+        await writeFile(path.join(tapestryTextureRoot, `${type}.png`), "fixture", "utf8");
+      }
+
+      const registry = await compileAssetRegistry(assetRoot);
+      const tapestry = registry.blocks["game:tapestry"];
+
+      expect(tapestry?.entityShapes?.attributeKeys).toEqual(["type"]);
+      expect(tapestry?.entityShapes?.defaultValues).toEqual(["ambush1"]);
+      expect(
+        tapestry?.entityShapes?.variants.forlorn1?.textures.painting?.base.assetPath,
+      ).toBe("survival/textures/block/cloth/tapestry/forlorn1.png");
+      expect(
+        tapestry?.entityShapes?.variants.forlorn2?.textures.painting?.base.assetPath,
+      ).toBe("survival/textures/block/cloth/tapestry/forlorn2.png");
+      expect(tapestry?.entityShapes?.variants.forlorn1?.rotateY).toBe(270);
+    } finally {
+      await rm(assetRoot, { recursive: true, force: true });
+    }
+  });
+
   it("uses the first matching ByType entry then fills variant placeholders", () => {
     const source = {
       texturesByType: {

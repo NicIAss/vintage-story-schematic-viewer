@@ -1017,6 +1017,41 @@ function resolveEntityShapeSet(
     .filter((type): type is string => type !== null);
   const variants: Record<string, CompiledShapeReference> = {};
 
+  if (className === "BlockTapestry") {
+    const tapestryTypes = asArray(getCaseInsensitive(attributes, "tapestryGroups"))
+      .flatMap((group) => asArray(group))
+      .map(asString)
+      .filter((type): type is string => type !== null);
+    const shape = asRecord(getCaseInsensitive(resolved, "shape"));
+    const shapeBase = asString(getCaseInsensitive(shape, "base"));
+    const defaultType = tapestryTypes.includes("ambush1")
+      ? "ambush1"
+      : tapestryTypes[0];
+    if (shapeBase === null || defaultType === undefined) {
+      return null;
+    }
+    for (const type of new Set(tapestryTypes)) {
+      const reference = resolveShapeReference(
+        resolvedWithAdditionalTextures(resolved, {
+          painting: `block/cloth/tapestry/${type}`,
+        }),
+        shape,
+        shapeBase,
+        shapeDocuments,
+        compiledShapes,
+        textureAssets,
+        textureCache,
+        warnings,
+      );
+      if (reference !== null) {
+        variants[entityShapeKey([type])] = reference;
+      }
+    }
+    return Object.keys(variants).length === 0
+      ? null
+      : { attributeKeys: ["type"], defaultValues: [defaultType], variants };
+  }
+
   if (className?.startsWith("BlockGenericTypedContainer") === true) {
     const defaultType = asString(getCaseInsensitive(attributes, "defaultType")) ?? types[0];
     if (defaultType === undefined) {

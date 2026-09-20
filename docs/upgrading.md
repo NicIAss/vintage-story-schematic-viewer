@@ -17,7 +17,7 @@ Before changing anything, record:
 - the location of the previous application bundle and registry for rollback.
 
 Do not overwrite the only working copy. Use immutable directories such as
-`viewer/0.4.2/` and `vs-assets/1.22.5/<registry-hash>/`, then change a small
+`viewer/0.4.3/` and `vs-assets/1.22.5/<registry-hash>/`, then change a small
 channel or configuration pointer after verification.
 
 ## Fetch and verify a renderer release
@@ -26,7 +26,7 @@ On Windows PowerShell or Ubuntu/Bash:
 
 ```text
 git fetch --tags origin
-git checkout v0.4.2
+git checkout v0.4.3
 pnpm install --frozen-lockfile
 pnpm test
 pnpm typecheck
@@ -187,3 +187,17 @@ parsing, registry, texture, geometry, and finalization phases, reach 100%, then
 fade away. Also verify that a failed schematic removes the loading panel and
 leaves the existing error state readable. Existing iframe query parameters and
 same-origin loading methods are unchanged.
+
+## 0.4.2 to 0.4.3
+
+Version 0.4.3 teaches the asset compiler to include all tapestry designs as
+block-entity-selected shape variants. Rebuild and redeploy the format-v2 asset
+registry with the 0.4.3 compiler; an older registry still loads but continues
+to show the shape file's fallback tapestry design. The existing PNG hierarchy
+already contains the selected textures and does not need conversion.
+
+Stage a schematic containing several different tapestry types and directions,
+including a multi-block design such as `forlorn1`/`forlorn2`. Confirm that the
+sections form the intended image, directional placement remains correct, and
+ordinary block resolution counts are unchanged. Schematic JSON files, iframe
+query parameters, and same-origin APIs require no migration.

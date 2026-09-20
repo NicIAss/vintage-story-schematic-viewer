@@ -2,7 +2,7 @@
 
 ## Current release surface
 
-Version 0.4.2 provides a Vite viewer that can be deployed as a standalone page
+Version 0.4.3 provides a Vite viewer that can be deployed as a standalone page
 and embedded in an iframe. A custom element and npm packages are planned but do
 not exist yet. Consumers should pin a Git commit or release tag while the API is
 alpha.
