@@ -51,5 +51,8 @@ export {
   createSchematicScene,
   type PlaceholderBreakdownEntry,
   type SchematicScene,
+  type SchematicSceneOptions,
+  type SchematicSceneProgress,
+  type SchematicSceneProgressStage,
   type SchematicSceneStats,
 } from "./scene/createSchematicScene";

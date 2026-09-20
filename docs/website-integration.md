@@ -2,7 +2,7 @@
 
 ## Current release surface
 
-Version 0.4.1 provides a Vite viewer that can be deployed as a standalone page
+Version 0.4.2 provides a Vite viewer that can be deployed as a standalone page
 and embedded in an iframe. A custom element and npm packages are planned but do
 not exist yet. Consumers should pin a Git commit or release tag while the API is
 alpha.
@@ -39,6 +39,12 @@ compression. Reuse one viewer/registry for successive schematics where the
 host layout allows it.
 
 An environment example is available at `apps/desktop/.env.example`.
+
+The viewer automatically displays loading progress for local files, predefined
+schematic URLs, and same-origin API loads. Website hosts do not need to add a
+separate loading component: the built-in panel covers download/read, parsing,
+registry, texture, geometry, and finalization phases and is announced to
+assistive technology.
 
 ## Iframe embed
 

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { InstancedMesh } from "three";
 import type { ParsedSchematic } from "../schematic/types";
-import { createSchematicScene } from "./createSchematicScene";
+import {
+  createSchematicScene,
+  type SchematicSceneProgress,
+} from "./createSchematicScene";
 
 describe("unresolved block visibility", () => {
   it("hides placeholders by default while preserving counts and meta visibility rules", async () => {
@@ -27,6 +30,18 @@ describe("unresolved block visibility", () => {
     scene.setPlaceholderBlocksVisible(false);
     expect(ordinary?.visible).toBe(false);
     expect(meta?.visible).toBe(false);
+    scene.dispose();
+  });
+
+  it("reports texture and geometry progress while building a scene", async () => {
+    const progress: SchematicSceneProgress[] = [];
+    const scene = await createSchematicScene(schematic(), null, {
+      onProgress: (update) => progress.push(update),
+    });
+
+    expect(progress[0]).toEqual({ stage: "textures", completed: 0, total: 0 });
+    expect(progress.some((update) => update.stage === "geometry")).toBe(true);
+    expect(progress.at(-1)).toEqual({ stage: "geometry", completed: 4, total: 4 });
     scene.dispose();
   });
 });

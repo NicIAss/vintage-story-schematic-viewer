@@ -2,6 +2,24 @@
 
 All notable changes will be documented in this file.
 
+## 0.4.2 - 2026-09-20
+
+Schematic loading feedback:
+
+- added a centered, accessible loading panel with a percentage bar and current
+  loading phase for standalone, embedded, local-file, URL, and host-API loads;
+- connected the indicator to actual file download, parsing, registry, texture,
+  geometry, and finalization work instead of an estimated timer;
+- added renderer-core progress callbacks for texture and geometry creation;
+- yielded periodically during geometry construction so large schematics keep
+  repainting and visibly advance the progress bar; and
+- added clean completion fading, error cleanup, and stale-load protection when
+  a newer schematic is selected before an older load finishes.
+
+This is a viewer and renderer-runtime update. Existing format-v2 registries,
+texture trees, embed settings, and schematic JSON files require no migration or
+rebuild.
+
 ## 0.4.1 - 2026-09-20
 
 Surface-decor geometry correction:

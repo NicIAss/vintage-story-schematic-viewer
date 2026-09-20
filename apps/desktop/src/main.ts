@@ -109,6 +109,15 @@ app.innerHTML = [
   "      </div>",
   '      <div id="drop-overlay" class="drop-overlay">Release to inspect schematic</div>',
   '      <div id="flight-hint" class="flight-hint">Click the viewport · WASD move · Space/Shift vertical · Ctrl boost · Esc frees cursor</div>',
+  '      <div id="loading-overlay" class="loading-overlay" role="status" aria-live="polite" aria-atomic="true" hidden>',
+  '        <div class="loading-card">',
+  '          <div class="loading-heading"><strong id="loading-label">Loading schematic…</strong><span id="loading-percent">0%</span></div>',
+  '          <div id="loading-track" class="loading-track" role="progressbar" aria-label="Schematic loading progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">',
+  '            <div id="loading-fill" class="loading-fill"></div>',
+  "          </div>",
+  '          <span class="loading-note">Large schematics may take a moment while textures and shapes are prepared.</span>',
+  "        </div>",
+  "      </div>",
   "    </div>",
   `    <aside id="inspector" class="inspector"${initialInspectorHidden}>`,
   '      <section class="inspector-section file-section">',
@@ -188,6 +197,11 @@ const unsupportedList = requireElement<HTMLElement>("unsupported-list");
 const statusMessage = requireElement<HTMLElement>("status-message");
 const renderStats = requireElement<HTMLElement>("render-stats");
 const flightHint = requireElement<HTMLElement>("flight-hint");
+const loadingOverlay = requireElement<HTMLDivElement>("loading-overlay");
+const loadingLabel = requireElement<HTMLElement>("loading-label");
+const loadingPercent = requireElement<HTMLElement>("loading-percent");
+const loadingTrack = requireElement<HTMLDivElement>("loading-track");
+const loadingFill = requireElement<HTMLDivElement>("loading-fill");
 const controlElements: Readonly<Record<ViewerControlId, readonly HTMLElement[]>> = {
   open: [openButton, emptyOpenButton],
   grid: [gridButton],
@@ -254,6 +268,8 @@ let activeSchematic: ParsedSchematic | null = null;
 let dragDepth = 0;
 let lastInfoUpdate = 0;
 let loadSequence = 0;
+let loadingSequence = 0;
+let loadingHideTimeout: number | null = null;
 let showGrid = initialViewerOptions.grid;
 let showBounds = initialViewerOptions.bounds;
 let showMetaBlocks = initialViewerOptions.metaBlocks;
@@ -450,9 +466,14 @@ viewportElement.addEventListener("drop", (event) => {
 
 async function loadSchematicFile(file: File): Promise<void> {
   if (!allowsLocalFiles()) return;
+  const loadingToken = beginSchematicLoad(file.name);
   try {
-    await loadSchematicJson(await file.text(), file.name);
+    updateSchematicLoadProgress(loadingToken, 0.06, `Reading ${file.name}…`);
+    await nextVisualFrame();
+    await parseAndDisplaySchematic(await file.text(), file.name, loadingToken);
+    completeSchematicLoad(loadingToken);
   } catch (error) {
+    failSchematicLoad(loadingToken);
     const message = error instanceof Error ? error.message : String(error);
     showError(file.name, message);
     setStatus("Could not load schematic.");
@@ -460,7 +481,11 @@ async function loadSchematicFile(file: File): Promise<void> {
 }
 
 if (fixturePath !== null) {
-  void loadDevelopmentFixture(fixturePath);
+  void loadDevelopmentFixture(fixturePath).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    showError("Development fixture", message);
+    setStatus("Could not load development fixture.");
+  });
 } else if (remoteSchematicUrl !== null) {
   void loadSchematicUrl(remoteSchematicUrl).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -473,38 +498,63 @@ async function loadSchematicJson(
   jsonText: string,
   fileName = "schematic.json",
 ): Promise<void> {
-  showEmbeddedLoadingState();
-  setStatus(`Parsing ${fileName}…`);
-  await displaySchematic(fileName, parseSchematicJson(jsonText));
+  const loadingToken = beginSchematicLoad(fileName);
+  try {
+    await parseAndDisplaySchematic(jsonText, fileName, loadingToken);
+    completeSchematicLoad(loadingToken);
+  } catch (error) {
+    failSchematicLoad(loadingToken);
+    throw error;
+  }
 }
 
 async function loadSchematicUrl(url: string): Promise<void> {
-  showEmbeddedLoadingState();
   const resolvedUrl = new URL(url, window.location.href);
   if (resolvedUrl.protocol !== "http:" && resolvedUrl.protocol !== "https:") {
     throw new Error("Remote schematic URLs must use HTTP or HTTPS.");
   }
-  setStatus(`Downloading ${resolvedUrl.pathname.split("/").pop() ?? "schematic"}…`);
-  const response = await fetch(resolvedUrl, {
-    credentials: resolvedUrl.origin === window.location.origin ? "same-origin" : "omit",
-  });
-  if (!response.ok) {
-    throw new Error(`Schematic request failed with HTTP ${response.status}.`);
-  }
-  const declaredLength = Number(response.headers.get("Content-Length"));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_REMOTE_SCHEMATIC_BYTES) {
-    throw new Error("Remote schematic exceeds the 16 MB limit.");
-  }
-  const text = await readLimitedResponseText(response, MAX_REMOTE_SCHEMATIC_BYTES);
   const fileName = decodeURIComponent(
     resolvedUrl.pathname.split("/").pop() || "schematic.json",
   );
-  await loadSchematicJson(text, fileName);
+  const loadingToken = beginSchematicLoad(fileName);
+  try {
+    updateSchematicLoadProgress(loadingToken, 0.04, `Downloading ${fileName}…`);
+    const response = await fetch(resolvedUrl, {
+      credentials: resolvedUrl.origin === window.location.origin ? "same-origin" : "omit",
+    });
+    if (!response.ok) {
+      throw new Error(`Schematic request failed with HTTP ${response.status}.`);
+    }
+    const declaredLength = Number(response.headers.get("Content-Length"));
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_REMOTE_SCHEMATIC_BYTES) {
+      throw new Error("Remote schematic exceeds the 16 MB limit.");
+    }
+    const text = await readLimitedResponseText(
+      response,
+      MAX_REMOTE_SCHEMATIC_BYTES,
+      (receivedBytes) => {
+        const downloadFraction = Number.isFinite(declaredLength) && declaredLength > 0
+          ? receivedBytes / declaredLength
+          : Math.min(0.9, receivedBytes / MAX_REMOTE_SCHEMATIC_BYTES);
+        updateSchematicLoadProgress(
+          loadingToken,
+          0.04 + Math.min(1, downloadFraction) * 0.14,
+          `Downloading ${fileName}…`,
+        );
+      },
+    );
+    await parseAndDisplaySchematic(text, fileName, loadingToken);
+    completeSchematicLoad(loadingToken);
+  } catch (error) {
+    failSchematicLoad(loadingToken);
+    throw error;
+  }
 }
 
 async function readLimitedResponseText(
   response: Response,
   maximumBytes: number,
+  onProgress?: (receivedBytes: number) => void,
 ): Promise<string> {
   if (response.body === null) return response.text();
   const reader = response.body.getReader();
@@ -520,34 +570,80 @@ async function readLimitedResponseText(
       throw new Error("Remote schematic exceeds the 16 MB limit.");
     }
     text += decoder.decode(result.value, { stream: true });
+    onProgress?.(receivedBytes);
   }
   return text + decoder.decode();
 }
 
 async function loadDevelopmentFixture(fixturePath: string): Promise<void> {
   const normalizedPath = fixturePath.replaceAll("\\", "/");
-  const response = await fetch(`/@fs/${normalizedPath}`);
-  if (!response.ok) {
-    throw new Error(`Could not load development fixture ${fixturePath}.`);
-  }
   const fileName = normalizedPath.split("/").pop() ?? "fixture.json";
-  await displaySchematic(fileName, parseSchematicJson(await response.text()));
+  const loadingToken = beginSchematicLoad(fileName);
+  try {
+    updateSchematicLoadProgress(loadingToken, 0.06, `Reading ${fileName}…`);
+    const response = await fetch(`/@fs/${normalizedPath}`);
+    if (!response.ok) {
+      throw new Error(`Could not load development fixture ${fixturePath}.`);
+    }
+    await parseAndDisplaySchematic(await response.text(), fileName, loadingToken);
+    completeSchematicLoad(loadingToken);
+  } catch (error) {
+    failSchematicLoad(loadingToken);
+    throw error;
+  }
+}
+
+async function parseAndDisplaySchematic(
+  jsonText: string,
+  fileName: string,
+  loadingToken: number,
+): Promise<void> {
+  updateSchematicLoadProgress(loadingToken, 0.19, `Parsing ${fileName}…`);
+  setStatus(`Parsing ${fileName}…`);
+  await nextVisualFrame();
+  const schematic = parseSchematicJson(jsonText);
+  if (loadingToken !== loadingSequence) return;
+  updateSchematicLoadProgress(loadingToken, 0.25, "Loading block asset registry…");
+  await displaySchematic(fileName, schematic, loadingToken);
 }
 
 async function displaySchematic(
   fileName: string,
   schematic: ParsedSchematic,
+  loadingToken: number,
 ): Promise<void> {
+  if (loadingToken !== loadingSequence) return;
   const sequence = ++loadSequence;
-  clearActiveScene();
-  activeSchematic = schematic;
   setStatus("Resolving local block assets and textures…");
   const registry = await assetRegistryPromise;
-  const createdScene = await createSchematicScene(schematic, registry);
-  if (sequence !== loadSequence) {
+  if (loadingToken !== loadingSequence) return;
+  clearActiveScene();
+  updateSchematicLoadProgress(loadingToken, 0.28, "Preparing textures…");
+  const createdScene = await createSchematicScene(schematic, registry, {
+    onProgress: ({ stage, completed, total }) => {
+      const fraction = total === 0 ? 1 : Math.min(1, completed / total);
+      if (stage === "textures") {
+        updateSchematicLoadProgress(
+          loadingToken,
+          0.28 + fraction * 0.44,
+          total === 0
+            ? "No additional textures needed"
+            : `Loading textures… ${completed.toLocaleString()} / ${total.toLocaleString()}`,
+        );
+        return;
+      }
+      updateSchematicLoadProgress(
+        loadingToken,
+        0.72 + fraction * 0.25,
+        `Building schematic geometry… ${completed.toLocaleString()} / ${total.toLocaleString()}`,
+      );
+    },
+  });
+  if (sequence !== loadSequence || loadingToken !== loadingSequence) {
     createdScene.dispose();
     return;
   }
+  activeSchematic = schematic;
   activeScene = createdScene;
   activeScene.setMetaBlocksVisible(showMetaBlocks);
   activeScene.setPlaceholderBlocksVisible(showUnresolvedBlocks);
@@ -596,6 +692,7 @@ async function displaySchematic(
     4,
     Math.min(24, Math.max(schematic.size.x, schematic.size.y, schematic.size.z) * 0.65),
   );
+  updateSchematicLoadProgress(loadingToken, 0.99, "Finalizing viewer…");
   setStatus(
     `Loaded ${schematic.diagnostics.blockCount.toLocaleString()} sparse entries · ` +
       `${activeScene.renderedBlocks.length.toLocaleString()} render placements · ` +
@@ -816,6 +913,66 @@ function showEmbeddedLoadingState(): void {
   if (presentationOptions.mode !== "embed" || activeSchematic !== null) return;
   emptyTitle.textContent = "Loading schematic";
   emptyDescription.textContent = "The website selected this schematic preview.";
+}
+
+function beginSchematicLoad(fileName: string): number {
+  loadingSequence += 1;
+  if (loadingHideTimeout !== null) {
+    window.clearTimeout(loadingHideTimeout);
+    loadingHideTimeout = null;
+  }
+  showEmbeddedLoadingState();
+  loadingOverlay.hidden = false;
+  loadingOverlay.classList.remove("is-complete");
+  viewportElement.setAttribute("aria-busy", "true");
+  updateSchematicLoadProgress(
+    loadingSequence,
+    0.02,
+    `Preparing ${fileName}…`,
+  );
+  return loadingSequence;
+}
+
+function updateSchematicLoadProgress(
+  loadingToken: number,
+  progress: number,
+  message: string,
+): void {
+  if (loadingToken !== loadingSequence) return;
+  const percentage = Math.round(Math.max(0, Math.min(1, progress)) * 100);
+  loadingLabel.textContent = message;
+  loadingPercent.textContent = `${percentage}%`;
+  loadingFill.style.width = `${percentage}%`;
+  loadingTrack.setAttribute("aria-valuenow", String(percentage));
+  loadingTrack.setAttribute("aria-valuetext", `${message} ${percentage}%`);
+}
+
+function completeSchematicLoad(loadingToken: number): void {
+  if (loadingToken !== loadingSequence) return;
+  updateSchematicLoadProgress(loadingToken, 1, "Schematic ready");
+  loadingOverlay.classList.add("is-complete");
+  viewportElement.setAttribute("aria-busy", "false");
+  loadingHideTimeout = window.setTimeout(() => {
+    if (loadingToken !== loadingSequence) return;
+    loadingOverlay.hidden = true;
+    loadingOverlay.classList.remove("is-complete");
+    loadingHideTimeout = null;
+  }, 360);
+}
+
+function failSchematicLoad(loadingToken: number): void {
+  if (loadingToken !== loadingSequence) return;
+  if (loadingHideTimeout !== null) {
+    window.clearTimeout(loadingHideTimeout);
+    loadingHideTimeout = null;
+  }
+  loadingOverlay.hidden = true;
+  loadingOverlay.classList.remove("is-complete");
+  viewportElement.setAttribute("aria-busy", "false");
+}
+
+async function nextVisualFrame(): Promise<void> {
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
 }
 
 function updateEmptyStateCopy(): void {

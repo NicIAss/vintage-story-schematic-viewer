@@ -17,7 +17,7 @@ Before changing anything, record:
 - the location of the previous application bundle and registry for rollback.
 
 Do not overwrite the only working copy. Use immutable directories such as
-`viewer/0.4.1/` and `vs-assets/1.22.5/<registry-hash>/`, then change a small
+`viewer/0.4.2/` and `vs-assets/1.22.5/<registry-hash>/`, then change a small
 channel or configuration pointer after verification.
 
 ## Fetch and verify a renderer release
@@ -26,7 +26,7 @@ On Windows PowerShell or Ubuntu/Bash:
 
 ```text
 git fetch --tags origin
-git checkout v0.4.1
+git checkout v0.4.2
 pnpm install --frozen-lockfile
 pnpm test
 pnpm typecheck
@@ -174,3 +174,16 @@ partial JSON shapes and one containing rotated clutter, such as a wagon wheel.
 Confirm that the overlay follows the visible surface and no longer floats at
 the nominal one-block outline. Existing iframe controls and same-origin APIs
 are unchanged.
+
+## 0.4.1 to 0.4.2
+
+Version 0.4.2 adds loading feedback to the viewer and an optional progress
+callback to renderer-core. Keep the existing format-v2 registry and texture
+hierarchy; no registry rebuild or schematic migration is needed.
+
+Smoke-test one small schematic and one large schematic through the same loading
+path used by the website. The loading panel should announce download/read,
+parsing, registry, texture, geometry, and finalization phases, reach 100%, then
+fade away. Also verify that a failed schematic removes the loading panel and
+leaves the existing error state readable. Existing iframe query parameters and
+same-origin loading methods are unchanged.

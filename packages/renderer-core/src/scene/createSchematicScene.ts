@@ -104,6 +104,18 @@ export interface SchematicScene {
   dispose(): void;
 }
 
+export type SchematicSceneProgressStage = "textures" | "geometry";
+
+export interface SchematicSceneProgress {
+  readonly stage: SchematicSceneProgressStage;
+  readonly completed: number;
+  readonly total: number;
+}
+
+export interface SchematicSceneOptions {
+  readonly onProgress?: (progress: SchematicSceneProgress) => void;
+}
+
 interface SupportBeamRenderGroup {
   readonly geometry: BufferGeometry;
   readonly material: MeshBasicMaterial[];
@@ -140,6 +152,7 @@ const PREVIEW_SEASON_VARIATION = 8 / 15;
 export async function createSchematicScene(
   schematic: ParsedSchematic,
   registry: AssetRegistry | null,
+  options: SchematicSceneOptions = {},
 ): Promise<SchematicScene> {
   const renderedBlocks = schematic.blocks.filter((block) =>
     block.code !== "game:air"
@@ -251,7 +264,9 @@ export async function createSchematicScene(
 
   const loadedTextures = new Map<string, Texture>();
   let failedTextureCount = 0;
+  let completedTextureCount = 0;
   const textureLoader = new TextureLoader();
+  reportSceneProgress(options, "textures", 0, requestedTextures.size);
   await Promise.all(
     [...requestedTextures].map(async (url) => {
       try {
@@ -264,6 +279,14 @@ export async function createSchematicScene(
         loadedTextures.set(url, texture);
       } catch {
         failedTextureCount += 1;
+      } finally {
+        completedTextureCount += 1;
+        reportSceneProgress(
+          options,
+          "textures",
+          completedTextureCount,
+          requestedTextures.size,
+        );
       }
     }),
   );
@@ -304,6 +327,10 @@ export async function createSchematicScene(
   const placeholderBreakdown = new Map<string, PlaceholderBreakdownEntry>();
   const surfaceDecorHostGeometryCache = new Map<string, BufferGeometry | null>();
   const surfaceDecorGeometryCache = new Map<string, BufferGeometry | null>();
+  const geometryProgressTotal = blocksByCode.size + 2;
+  let geometryProgressCompleted = 0;
+  reportSceneProgress(options, "geometry", 0, geometryProgressTotal);
+  await yieldForSceneProgress(options);
 
   // Support beams are a block-entity behavior and may be hosted by chisels or
   // other blocks. Render those behavior meshes in addition to the host model;
@@ -390,6 +417,13 @@ export async function createSchematicScene(
     supportBeamBlockCount += successfulHostPositions.size;
     supportBeamCodeCount += successfulHostCodes.size;
   }
+  geometryProgressCompleted += 1;
+  reportSceneProgress(
+    options,
+    "geometry",
+    geometryProgressCompleted,
+    geometryProgressTotal,
+  );
 
   // Decors are separate, face-attached blocks in a schematic. The game builds
   // surface decals from the host block's tessellated model, so use that same
@@ -541,8 +575,25 @@ export async function createSchematicScene(
   } else {
     unresolvedDecorCount = schematic.decors.length;
   }
+  geometryProgressCompleted += 1;
+  reportSceneProgress(
+    options,
+    "geometry",
+    geometryProgressCompleted,
+    geometryProgressTotal,
+  );
 
   for (const [code, codeBlocks] of blocksByCode) {
+    if (geometryProgressCompleted % 8 === 0) {
+      await yieldForSceneProgress(options);
+    }
+    geometryProgressCompleted += 1;
+    reportSceneProgress(
+      options,
+      "geometry",
+      geometryProgressCompleted,
+      geometryProgressTotal,
+    );
     const definition = registry?.blocks[code];
     const isMeta = definition?.isMeta === true || code.startsWith("game:meta-");
     if (
@@ -2475,6 +2526,20 @@ function groupBlocksByCode(
     }
   }
   return blocksByCode;
+}
+
+function reportSceneProgress(
+  options: SchematicSceneOptions,
+  stage: SchematicSceneProgressStage,
+  completed: number,
+  total: number,
+): void {
+  options.onProgress?.({ stage, completed, total });
+}
+
+async function yieldForSceneProgress(options: SchematicSceneOptions): Promise<void> {
+  if (options.onProgress === undefined) return;
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
 function colorForCode(code: string, target: Color): Color {

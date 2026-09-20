@@ -1,4 +1,4 @@
-export const VIEWER_VERSION = "0.4.1";
+export const VIEWER_VERSION = "0.4.2";
 
 export interface ViewerOptions {
   readonly grid: boolean;
